@@ -1,0 +1,9 @@
+# Machine-local / session-transient files — never part of the wiki
+.claude/settings.local.json
+resume_session.txt
+project_prompts.txt
+
+# OS / tooling cruft
+.DS_Store
+*.tmp
+.firecrawl/

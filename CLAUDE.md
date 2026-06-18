@@ -301,6 +301,28 @@ These look similar but differ deliberately — do not mix them:
 - **`sources:` frontmatter** uses a **root-relative** path: `raw/0001_sample-source/article.md`. This is a canonical metadata reference, not a clickable link, so it reads the same on every page regardless of where the page sits.
 - **Image embeds** (and any in-body link that must actually resolve) use a **page-relative** path: from a page in `wiki/concepts/`, that is `../../raw/0001_sample-source/images/foo.png`. Wiki pages sit two levels below the wiki root, so the `../../` prefix is required for the markdown link to resolve.
 
+### The source layer is provenance, not graph nodes
+
+`raw/` is the **source/provenance layer**, distinct from the synthesized **knowledge layer** in `wiki/`.
+A page records where it came from with the `sources:` frontmatter path and plain-text inline
+citations (`raw/0001_…/article.md (slide N)`) — **neither is a `[[wikilink]]`, so neither creates an
+Obsidian graph edge, by design.** The synthesized layer (`wiki/**`, `index.md`) is the knowledge graph;
+the source packages sit beneath it and are reached by their `sources:` path, the source-PDF link, or
+backlink search — not by being graph nodes. (The only sanctioned `[[raw/…]]` wikilink is the rare
+`See source for fuller detail` pointer.)
+
+Consequences to expect and **not** to "fix" by integrating sources into the graph:
+- Every `raw/NNNN_…/article.md` is an **orphan in Graph View** — correct: it has no inbound wikilinks.
+- Every source node is **labelled `article`** — Obsidian labels a node by its *filename*, not its H1,
+  and the pipeline names every source package `article.md` (the descriptive name is on the *folder*).
+  Do **not** rename `article.md` to make labels descriptive: source paths are frozen and load-bearing
+  (see *Source folder naming*), so a rename silently breaks every citing page for a cosmetic label.
+
+**Exclude the source layer from Graph View** so the graph shows only the synthesized knowledge web:
+in the graph's search/filter box (or `.obsidian/graph.json` `"search"`, which is machine-local and
+git-ignored) set **`-path:"raw/"`**. Keep `showOrphans: true` so a genuine orphan *wiki* page still
+surfaces as a real lint signal — only `raw/` is an **expected** orphan.
+
 ### Forward links are expected
 
 Cross-link liberally, including to pages that **do not exist yet**. A `[[page-slug]]` pointing at a
@@ -616,7 +638,7 @@ Good answers compound the wiki. Do not let useful synthesis disappear into chat 
 Run this workflow periodically (after every 3–4 ingests, or on request).
 
 Check for:
-- **Orphan pages** — pages with no inbound `[[wikilinks]]` from other pages
+- **Orphan pages** — `wiki/**` pages with no inbound `[[wikilinks]]` from other pages. Scope this to the synthesized layer only: `raw/NNNN_…/article.md` source packages are **expected** orphans (provenance, not graph nodes — see *The source layer is provenance*) and must **not** be flagged or "fixed" by wikilinking them.
 - **Missing pages** — concepts or entities mentioned in `[[wikilinks]]` that have no file (ignore `[[raw/...]]` source pointers — they reference source files, not wiki pages)
 - **Near-miss slugs** — an orphaned forward link `[[x]]` coexisting with an existing page that may be the same entity under a different name; flag the pair for user review rather than silently merging or renaming, and ensure the link site carries a pending-pointer if the pages are closely related
 - **Stale pending-pointers** — `*(page pending — closest coverage: …)*` notes whose wanted slug now has a page; delete the parenthetical and keep the plain, now-resolving wikilink

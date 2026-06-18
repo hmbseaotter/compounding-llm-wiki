@@ -150,6 +150,52 @@ it to; you should respect them too when editing by hand.
 These are the operating rules the LLM follows. You trigger most of them with plain-English requests;
 the schema does the rest.
 
+### The skill sequence (at a glance)
+
+If you are not sure what to run when, this is the path from a raw document to a fully-usable wiki.
+The `/...` items are Claude Code custom skills configured on your machine (see
+[External tools for source acquisition](#external-tools-for-source-acquisition)); the rest are plain
+requests you type to the agent.
+
+```mermaid
+flowchart TD
+  A[You have a source] --> B{What format?}
+  B -->|Web page / URL| U["say: 'add source URL'<br/>(Firecrawl · /url-to-md)"]
+  B -->|Word or ODF| W["/msword-to-pdf"]
+  B -->|PDF| P{Text-only, or has graphics?}
+  B -->|Other / offline| M["save it manually into raw/NNNN_slug/"]
+  W --> P
+  P -->|text-only prose| P1["/pdf-to-md"]
+  P -->|diagrams · slides · tables| P2["/pdf-to-images → /image-to-md"]
+  U --> RAW[("self-contained folder in raw/")]
+  P1 --> RAW
+  P2 --> RAW
+  M --> RAW
+  RAW --> ING["ingest: say 'ingest raw/NNNN_…' (Sonnet)<br/>pages · links · images · index · log · MOC"]
+  ING --> Q{Last source in this round?}
+  Q -->|no — more coming| B
+  Q -->|yes| C["/wiki-compile (Opus)<br/>build causal-chains + full lint + MOC"]
+  C --> USE["use it: ask questions anytime ·<br/>resolve flagged contradictions when prompted"]
+```
+
+1. **Acquire** — land the source in `raw/` as a self-contained `NNNN_<slug>/` folder, picking the
+   route by format:
+   - **Web page** → say **"add source `<URL>`"** (Firecrawl / `/url-to-md`).
+   - **Word / ODF** (`.doc/.docx/.rtf/.odt`) → `/msword-to-pdf`, then treat the resulting PDF as below.
+   - **Text-only PDF** (prose, no diagrams) → `/pdf-to-md`.
+   - **PDF with graphics** (diagrams, slides, tables) → `/pdf-to-images`, then `/image-to-md`.
+   - **Anything else / offline** → save it manually into `raw/NNNN_<slug>/`.
+2. **Ingest** — say **"ingest `raw/NNNN_…`"**. The agent builds/updates pages, cross-links them,
+   synthesizes image content into text, updates `index.md` and `log.md`, and regenerates the MOC.
+   When it finishes it asks whether this was the **last source in the round**.
+3. **Finish the round** — run **`/wiki-compile`** once per round (the agent prompts you at step 2).
+   It builds the deferred `causal-chain` candidates into pages, runs the full lint, and regenerates
+   the MOC — the step that makes the new material *fully* usable. It is safe to run anytime: it
+   self-cancels when nothing has changed, and it is also the right thing to run after **manual
+   Obsidian edits** (it reconciles lint + MOC and re-reasons only what changed).
+4. **Use it** — ask questions anytime; resolve any flagged **contradictions** when the agent surfaces
+   them. Good questions also compound the wiki (see [Querying](#querying)).
+
 ### Adding a source (two routes)
 
 - **Manual route (always works).** Save the document yourself, put it in a folder named

@@ -3,6 +3,9 @@
 resume_session.txt
 project_prompts.txt
 
+# Obsidian vault config — machine-local, created when you open the wiki in Obsidian
+.obsidian/
+
 # OS / tooling cruft
 .DS_Store
 *.tmp

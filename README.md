@@ -16,6 +16,7 @@
 - [How it is laid out on disk](#how-it-is-laid-out-on-disk)
 - [Folder rules (what each directory is for, and what you may not do to it)](#folder-rules)
 - [How it operates](#how-it-operates)
+- [Viewing the wiki](#viewing-the-wiki)
 - [Requirements and dependencies](#requirements-and-dependencies)
 - [Setups: where you can run this](#setups-where-you-can-run-this)
 - [Deployment: getting the repo from GitHub (step by step)](#deployment-getting-the-repo-from-github-step-by-step)
@@ -223,6 +224,42 @@ contradiction analysis) to a stronger model and routine ingestion to a cheaper o
 subagents with an explicit model override. The orchestrating session does this automatically — you
 are **not** asked to switch models by hand. (Reference defaults in `CLAUDE.md`: ingestion on a Sonnet
 model, reasoning on an Opus model. Update that table, not your habits, if the model lineup changes.)
+
+---
+
+## Viewing the wiki
+
+The wiki uses two conventions that **plain Markdown previews — including VS Code's built-in preview — do not render**: `[[wikilinks]]` (the cross-links between pages) and Mermaid diagrams (on `causal-chain` pages). To get clickable links, backlinks, a graph view, and graphical diagrams, open the wiki in a tool that understands them.
+
+### Option 1 — Obsidian (recommended)
+
+[Obsidian](https://obsidian.md/) is a free Markdown knowledge-base app built around exactly these conventions.
+
+1. Download and install it from <https://obsidian.md/>.
+2. Choose **"Open folder as vault"** and select this repository's root folder.
+3. You immediately get: clickable `[[wikilinks]]`, **backlinks** (what links to the page you're on), a **graph view** of the whole wiki, inline images, and native **Mermaid** rendering.
+
+Links to pages that don't exist yet show as "unresolved" — that's expected; they are forward links that light up automatically once the page is created.
+
+### Option 2 — VS Code + two extensions
+
+To stay in VS Code, add:
+
+- **Foam** (or **Markdown Memo**) — makes `[[wikilinks]]` clickable and adds backlinks + a graph view.
+- **Markdown Preview Mermaid Support** — renders the Mermaid diagrams in VS Code's preview.
+
+**How to install a VS Code extension** (if you've not done it before):
+
+1. Open the **Extensions** view — click the four-squares icon in the left **Activity Bar**, or press **Ctrl+Shift+X** (Windows/Linux) / **Cmd+Shift+X** (macOS), or use the menu **View → Extensions**.
+2. Type the extension's name into the search box (e.g. `Foam`).
+3. Click **Install** on the matching result; reload if VS Code prompts you.
+4. Open any wiki page and choose **Open Preview** (**Ctrl+Shift+V** / **Cmd+Shift+V**) — wikilinks and Mermaid now render.
+
+### Option 3 — GitHub (online)
+
+GitHub's Markdown viewer renders **Mermaid diagrams automatically**, so the causal-chain flowcharts display right on the repository website, and it shows images. It does **not** make `[[wikilinks]]` clickable — for full navigation use Obsidian or the VS Code extensions above.
+
+> Every `causal-chain` page also carries a plain-text (ASCII) version of its diagram, which renders in **any** viewer with no extension — so the visual is never lost, even in a bare Markdown preview.
 
 ---
 

@@ -190,9 +190,24 @@ One sentence: what is the trigger, and what is the end state this chain traces?
 
 ## Chain (visual)
 
-An optional, human-readable diagram of the ordered flow. Use a fenced code block with arrows and
-direction labels. At a branch, indent the sub-paths. For a feedback loop, draw the final arrow back
-to the earlier node it feeds and label it `↺ loop`:
+Two synced renderings of the ordered flow (both mirror the canonical Links table below).
+
+**(a) Mermaid flowchart** (preferred) — renders as a graphical diagram on GitHub, in Obsidian, and
+in VS Code with a Mermaid extension. Use `flowchart TD`, one node per entity, the direction token on
+each edge label, and for a feedback loop draw the edge back to the earlier node with `↺` in its label:
+
+```mermaid
+flowchart TD
+  T[Trigger / root cause] -->|increase| A[Effect A]
+  A -->|decrease| B[Effect B]
+  B -->|trigger| C1[Effect C1]
+  B -->|trigger| C2[Effect C2]
+  C2 -->|"↺ increase"| A
+```
+
+**(b) ASCII fallback** — a plain-text version in a fenced code block that renders in any viewer with
+no extension. At a branch, indent the sub-paths; for a feedback loop, draw the final arrow back to
+the earlier node it feeds and label it `↺ loop`:
 
 ```
 [Trigger / Root cause]
@@ -431,6 +446,11 @@ Rules:
 5. **Skip decorative images.** Do not link images whose only purpose is to break up text. Noting their existence is unnecessary.
 6. **Never duplicate binaries into `wiki/`.** The wiki layer is synthesized text that points at source assets; it does not hold its own copies.
 7. **When in doubt, lean toward preserving.** A wrongly-kept image is low-cost; a wrongly-dropped illustrative one loses information. The lint pass can review borderline calls.
+8. **PDF-derived sources: deposit lightweight images, keep the original PDF as the master.** When a source is a PDF rasterized to per-page/per-slide images, distinguish two image generations with different jobs:
+   - **Extraction images are transient.** The high-DPI PNGs (~200 DPI) produced to feed vision text/relationship extraction are *working files*, not archive material. They do **not** go into `raw/`. (The vision model downsamples to ~1568 px ≈ 150 DPI anyway, so 200 DPI buys nothing once extraction is done.)
+   - **Deposit lightweight JPEGs in `raw/`.** Store per-page **JPEG at ~150 DPI** in the source folder's `images/` (e.g. `raw/0023_…/images/0387.jpg`). These exist only to render **inline** beside their extracted text and for human reference, so viewing quality is enough; this keeps `raw/` an order of magnitude smaller. Re-render them **straight from the PDF** (one clean generation), not by recompressing the extraction PNGs.
+   - **Archive the original PDF once as `raw/_master/<file>.pdf`** — the full-fidelity fallback. `_master/` is a reserved non-`NNNN_` folder holding source masters shared across the PDF's derived lesson/section folders.
+   - **A PDF does not render inline in markdown** (`![](x.pdf)` does not embed — you get only a click-to-open link). So the PDF is the reference-on-demand copy, never the embed. Every PDF-derived `article.md` MUST carry a one-line pointer to its master (`../_master/<file>.pdf`, opens in a new tab) so a reader who needs full fidelity of any page can reach it.
 
 ---
 

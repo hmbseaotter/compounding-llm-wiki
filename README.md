@@ -22,7 +22,7 @@
 - [Deployment: getting the repo from GitHub (step by step)](#deployment-getting-the-repo-from-github-step-by-step)
 - [Using the tool: what to type and where](#using-the-tool-what-to-type-and-where)
 - [Flags and behavioral toggles](#flags-and-behavioral-toggles)
-- [Firecrawl: the one external dependency](#firecrawl-the-one-external-dependency)
+- [External tools for source acquisition](#external-tools-for-source-acquisition)
 - [License](#license)
 
 ---
@@ -160,7 +160,7 @@ the schema does the rest.
   provenance (source URL, retrieval time, engine), files it as the next `raw/NNNN_<slug>/`, runs a
   QA check, logs an `acquire` entry, and then **asks you whether to ingest** — acquisition never
   auto-ingests, so a bad scrape can't flow into the wiki. The URL route depends on
-  [Firecrawl](#firecrawl-the-one-external-dependency). Paywalled pages fall back to the manual route.
+  [Firecrawl](#external-tools-for-source-acquisition). Paywalled pages fall back to the manual route.
 
 ### Ingesting
 
@@ -269,10 +269,15 @@ GitHub's Markdown viewer renders **Mermaid diagrams automatically**, so the caus
 |-------------|-----------|-------|
 | **An AI coding agent that reads `CLAUDE.md`** | Everything. | **Claude Code is the reference implementation** and the only setup verified here. The agent must support: auto-loading `CLAUDE.md` as project instructions, reading/writing files in the repo, and (ideally) dispatching subagents with a model override for cost routing. |
 | **Git** | Cloning/updating the repo. | Standard Git install. |
-| **Firecrawl** (optional) | The automated "add source `<URL>`" route only. | Not required for manual source-adding or for any query/lint work. See [its section](#firecrawl-the-one-external-dependency). |
+| **Firecrawl** (optional) | The automated "add source `<URL>`" route only. | Not required for manual source-adding or for any query/lint work. |
+| **LibreOffice** (optional) | Converting Word/ODF sources (`.doc/.docx/.rtf/.odt`) to PDF before ingest, via the `/msword-to-pdf` skill. | Not required otherwise. Install elevated: `winget install --id TheDocumentFoundation.LibreOffice -e --silent --accept-package-agreements --accept-source-agreements`. MS Word not needed. |
+| **Python 3 + PyMuPDF** (optional) | Rasterizing a PDF (or a converted Word doc) to per-page images for the vision pass, via `/pdf-to-images`. | PyMuPDF auto-installs on first run; no Ghostscript/poppler. Not required for text-only sources or query/lint. |
 
-This template does **not** require Node, Python, a build step, or any package install of its own.
-There is nothing to compile. The "program" is the schema plus your agent.
+The **wiki template itself** requires none of these — no Node, no Python, no build step, nothing to
+compile; the "program" is the schema plus your agent. The optional tools above matter only for
+*automated source acquisition* — fetching a URL, or converting a PDF/Word file into ingestible
+per-page form. Manual source-adding and all query / lint / contradiction work need none of them. See
+[External tools for source acquisition](#external-tools-for-source-acquisition).
 
 ---
 
@@ -449,7 +454,13 @@ write the rule into `CLAUDE.md` — the schema _is_ the configuration surface.
 
 ---
 
-## Firecrawl: the one external dependency
+## External tools for source acquisition
+
+The wiki's core — ingest, query, lint, contradiction handling — needs nothing beyond your agent. The
+tools below are each **optional** and unlock one *source-acquisition* route; you only need the one(s)
+for the route you use, and none of them for manually-added sources.
+
+### Firecrawl — the "add source `<URL>`" route
 
 Firecrawl is used for **one thing only**: the automated "add source `<URL>`" route, which fetches a
 web page as clean markdown plus its images. **You do not need Firecrawl at all** if you only add
@@ -474,6 +485,25 @@ To enable the URL route:
 > The schema is engine-agnostic: any fetcher that produces clean main-content markdown can stand in
 > for Firecrawl. Firecrawl is just the current default. **Paywalled / logged-in pages can't be
 > fetched this way** (the scraper doesn't share your browser session) — add those manually.
+
+### LibreOffice — the Word / ODF source route
+
+To ingest a Microsoft Word (`.doc/.docx`) or ODF (`.rtf/.odt`) document, the `/msword-to-pdf` skill
+converts it to PDF (via LibreOffice headless), after which it flows through the **same image+vision
+pipeline as any PDF**. This matters because a Word file can carry embedded images, diagrams, charts,
+and line-tables that a text-only extraction would silently drop — converting to PDF and rasterizing
+preserves them.
+
+- **Install** (run in an **elevated** terminal so the MSI finalizes cleanly):
+  `winget install --id TheDocumentFoundation.LibreOffice -e --silent --accept-package-agreements --accept-source-agreements`
+- MS Word itself is **not** required. If LibreOffice is missing, `/msword-to-pdf` says so and prints this command.
+- A genuinely pure-text Word doc can instead be extracted directly with `firecrawl-parse` (no LibreOffice) — but prefer the convert-to-PDF route whenever the document has any figures, so nothing graphic is lost.
+
+### PyMuPDF — rasterizing PDFs to per-page images
+
+The `/pdf-to-images` skill (used on PDFs, and on the PDFs produced from Word) rasterizes each page to
+an image for the vision pass. It runs on Python 3 with **PyMuPDF**, which it **auto-installs on first
+run** — so there is normally nothing to set up, and no Ghostscript/poppler is needed.
 
 ---
 

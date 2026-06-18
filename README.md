@@ -6,6 +6,20 @@
 > <https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f>
 > Read that gist first — it is the one-page rationale. Everything below is the working machinery built around it.
 
+> **① Install the companion toolkit first.** The skills that ingest sources and maintain the wiki —
+> `/pdf-to-images`, `/pdf-to-md`, `/image-to-md`, `/msword-to-pdf`, `/url-to-md`, `/deepwiki`,
+> `/home-page-moc`, `/wiki-compile` — are **not** in this repository. They live in a separate
+> companion repo, **[llm-wiki-toolkit](https://github.com/hmbseaotter/llm-wiki-toolkit)**. Clone it
+> alongside this one and run its installer **before** you start ingesting; without those skills the
+> ingest pipeline has no tools to run. (See the toolkit's README for its prerequisites: Python, and
+> optionally LibreOffice and Firecrawl.)
+>
+> ---
+>
+> **② What this repository provides.** `compounding-llm-wiki` is the *wiki template* itself: it ships
+> the schema (page types and rules) plus an empty, structured knowledge base, ready for you to point at
+> your own domain and fill. The toolkit above is the machinery; this repository is the thing it builds.
+
 ---
 
 ## Table of contents

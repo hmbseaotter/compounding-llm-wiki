@@ -269,6 +269,7 @@ GitHub's Markdown viewer renders **Mermaid diagrams automatically**, so the caus
 |-------------|-----------|-------|
 | **An AI coding agent that reads `CLAUDE.md`** | Everything. | **Claude Code is the reference implementation** and the only setup verified here. The agent must support: auto-loading `CLAUDE.md` as project instructions, reading/writing files in the repo, and (ideally) dispatching subagents with a model override for cost routing. |
 | **Git** | Cloning/updating the repo. | Standard Git install. |
+| **Git LFS** | Cloning/pushing the repo's binary assets — per-page images in `raw/**/images/` and master PDFs in `raw/_master/`. | Run `git lfs install` once. Without it you get LFS pointer text files instead of the images. See the **Git LFS note** below if a push is ever rejected with `GH008`. |
 | **Firecrawl** (optional) | The automated "add source `<URL>`" route only. | Not required for manual source-adding or for any query/lint work. |
 | **LibreOffice** (optional) | Converting Word/ODF sources (`.doc/.docx/.rtf/.odt`) to PDF before ingest, via the `/msword-to-pdf` skill. | Not required otherwise. Install elevated: `winget install --id TheDocumentFoundation.LibreOffice -e --silent --accept-package-agreements --accept-source-agreements`. MS Word not needed. |
 | **Python 3 + PyMuPDF** (optional) | Rasterizing a PDF (or a converted Word doc) to per-page images for the vision pass, via `/pdf-to-images`. | PyMuPDF auto-installs on first run; no Ghostscript/poppler. Not required for text-only sources or query/lint. |
@@ -278,6 +279,13 @@ compile; the "program" is the schema plus your agent. The optional tools above m
 *automated source acquisition* — fetching a URL, or converting a PDF/Word file into ingestible
 per-page form. Manual source-adding and all query / lint / contradiction work need none of them. See
 [External tools for source acquisition](#external-tools-for-source-acquisition).
+
+> **Git LFS note.** Raw images (`raw/**/images/`) and master PDFs (`raw/_master/`) are stored in Git
+> LFS. Normally `git push` uploads them automatically. But if your environment sets a custom
+> `core.hooksPath` (e.g. a push-guard hook), it can **shadow git-lfs's own pre-push hook**, and a push
+> that adds **new** binaries is then rejected remotely with `GH008: ... unknown Git LFS objects`. Fix:
+> run `git lfs push --all origin`, then `git push` — or chain `git lfs pre-push "$@"` into your custom
+> hook so it happens automatically.
 
 ---
 

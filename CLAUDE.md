@@ -422,17 +422,30 @@ Run this workflow when a new raw source is added or an existing source is update
    - Scan for causal language: "causes," "leads to," "triggers," "results in," "inhibits," "suppresses," "increases," "decreases," "is associated with," "activates," "blocks," and domain-specific equivalents. Include cause-effect relationships depicted in kept images (diagram arrows, flow charts) — see Images and assets rule 3.
    - For each causal statement, identify the source node and target node. Record the direction of effect (increase / decrease / activate / inhibit / trigger / suppress / other).
    - Add or update `What causes this` and `What this causes` sections on the relevant concept pages.
-   - If a chain of three or more links can be assembled (A → B → C or longer), create or update a `causal-chain` page in `wiki/causal-chains/`.
+   - If a chain of three or more links can be assembled (A → B → C or longer), create or update a `causal-chain` page in `wiki/causal-chains/`. **When ingesting on a non-Opus subagent (the normal case), defer this:** log the chain under a `Causal-chain candidates` block in `log.md` and let the batched Opus `/wiki-compile` pass (step 10) build it — but still add the `What causes this` / `What this causes` concept-page bullets now.
    - If a causal link is not supported by any source document, mark it EXTERNAL and cite the reputable source used. See the Causal chain capability section.
 6. **Handle images and assets** — see the Images and assets section below.
 7. **Update `index.md`:** add or update the entry for every page touched.
 8. **Append to `log.md`:** one entry per ingest, format: `## [YYYY-MM-DD HH:mm:ss] ingest | [Source Title]`
-9. **Regenerate `home-page.md`** as the final step — run the `home-page-moc` generator skill
-   (`python <skills>/home-page-moc.py --root .`). This rewrites the Obsidian Map of Content from the
-   current page set so it never drifts. `home-page.md` is a build artifact — never hand-edit it. If
-   this ingest created a new `-vs-` page, add a `moc_mirror: <swapped-operand-slug>` line to that
-   page's frontmatter *before* regenerating, so its mirror entry appears under the other letter (the
-   spelling cannot be derived by string-swapping; see Page format).
+9. **Regenerate `home-page.md`** as the last build step of the ingest — run the `home-page-moc`
+   generator skill (`python <skills>/home-page-moc.py --root .`). This rewrites the Obsidian Map of
+   Content from the current page set so it never drifts. `home-page.md` is a build artifact — never
+   hand-edit it. If this ingest created a new `-vs-` page, add a `moc_mirror: <swapped-operand-slug>`
+   line to that page's frontmatter *before* regenerating, so its mirror entry appears under the other
+   letter (the spelling cannot be derived by string-swapping; see Page format).
+10. **Check the round boundary — don't let the finishing step be forgotten.** Ingestion defers the
+    reasoning-heavy work: causal-chain construction (step 5) and the lint pass run as a batched
+    **Opus** pass, the `/wiki-compile` skill — not per ingest. The one reliable trigger for that pass
+    is the *end of a round of ingestion*, which only the user knows. So after completing this ingest,
+    **ask the user**:
+    > "Was this the last ingest in this round? If yes, I'll run `/wiki-compile` now — the finishing
+    > step that builds the logged causal-chain candidates into pages and lints the new material so it
+    > is fully usable. If more sources are queued, I'll defer and re-ask after the last one."
+    Run `/wiki-compile` when the user confirms the round is done. **Backstop:** even mid-round, if the
+    `Causal-chain candidates` logged in `log.md` since the last compile exceed ~15, surface that and
+    offer to compile now, so a very long batch never sits un-compiled. `/wiki-compile` is itself safe
+    to run anytime — its STEP 0 dirty-check exits cheaply (no Opus spend) when there is nothing to do,
+    which also makes it the right pass to run after manual Obsidian edits (lint + MOC reconcile).
 
 One source document typically touches 8–15 wiki pages. Cross-link liberally — if page A mentions a
 concept that has its own page B, add `[[page-b]]` to A's Related section.

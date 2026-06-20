@@ -652,6 +652,29 @@ Good answers compound the wiki. Do not let useful synthesis disappear into chat 
 
 Run this workflow periodically (after every 3–4 ingests, or on request).
 
+### Scope: incremental by default, full sweep on request
+
+Lint splits into **cheap deterministic checks** and **expensive reasoning checks**, which scope
+differently:
+
+- **Deterministic, shell-based checks** (Orphan pages, Missing pages, Stale pending-pointers, Broken
+  asset links, Unreferenced source images) are `grep`/`comm`/`find` passes with no context cost — run
+  them **repo-wide every time**.
+- **Reasoning-heavy checks** (Contradictions, Causal-chain gaps, Thin pages, Missing cross-references)
+  cost LLM context, so by default scope them to the **changed neighbourhood**:
+  1. **Changed set** — pages created/updated since the last lint. Read it from `log.md` (`ingest |`
+     entries after the most recent `lint |` entry) or `git diff` since the last lint commit.
+  2. **Neighbourhood** — the changed set plus its **1st- and 2nd-degree `[[wikilink]]` neighbours**.
+     This is the *only* surface where a newly-introduced contradiction, broken cross-reference, or
+     causal gap can appear: a contradiction can exist only between claims about the **same entity or
+     relationship**, and the wikilink graph already encodes which pages are related — two pages sharing
+     no link and no concept cannot contradict each other. Re-reasoning the whole wiki for a small edit
+     is O(n²) in page count and needlessly burns context as the wiki grows.
+
+**Full reasoning sweep on request** — run the reasoning-heavy checks across the entire wiki when the
+user asks for a "full lint", and as good practice at major milestones (e.g. after a large bootstrap
+ingest) to catch non-local drift an incremental pass could miss. State which scope you ran.
+
 Check for:
 - **Orphan pages** — `wiki/**` pages with no inbound `[[wikilinks]]` from other pages. Scope this to the synthesized layer only: `raw/NNNN_…/article.md` source packages are **expected** orphans (provenance, not graph nodes — see *The source layer is provenance*) and must **not** be flagged or "fixed" by wikilinking them.
 - **Missing pages** — concepts or entities mentioned in `[[wikilinks]]` that have no file (ignore `[[raw/...]]` source pointers — they reference source files, not wiki pages)

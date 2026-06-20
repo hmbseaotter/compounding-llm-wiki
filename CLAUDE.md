@@ -147,6 +147,10 @@ One sentence. What is this, in plain language the target reader understands imme
 ## Contradictions flagged   ← Only include when a known source conflict applies to this page.
 - **[raw/file-a.md] vs [raw/file-b.md]:** [Description of conflicting claims.]
   LLM assessment ([model name], [YYYY-MM-DD HH:mm:ss]): [short plausibility analysis — see contradiction protocol]
+  Contradiction severity: hard | soft | scope   ← REQUIRED. Exactly one token — the severity from the
+                                                  Contradiction severity levels table, written
+                                                  machine-readably so any automation can act on it
+                                                  deterministically instead of guessing from prose.
   Status: Unresolved — flagged for user review | Resolved — kept [A/B] because [reason]
 
 ## Related
@@ -264,7 +268,7 @@ what, if anything, eventually limits it].
 
 ## Contradictions flagged
 [Only include if a source conflict affects this chain.]
-- **[raw/file-a.md] vs [raw/file-b.md]:** [conflicting claims]. Status: Unresolved | Resolved — [reason]
+- **[raw/file-a.md] vs [raw/file-b.md]:** [conflicting claims]. Contradiction severity: hard | soft | scope. Status: Unresolved | Resolved — [reason]
 
 ## Related
 - [[related-chain]] — description of how the chains connect
@@ -519,6 +523,9 @@ When a contradiction is detected:
    - Name both source documents.
    - State exactly what each source says.
    - Include the LLM assessment with model name and timestamp.
+   - Add a `Contradiction severity: hard | soft | scope` line — exactly one severity token from the
+     severity table, machine-readable. Any automation that gates on severity keys off this token, so it
+     is required, not optional; do not leave severity expressed only in prose.
    - Set the status to `Unresolved — flagged for user review`.
 
 3. **Record it in `log.md`** immediately:
@@ -527,6 +534,7 @@ When a contradiction is detected:
    Source A (raw/filename-a.md): "[exact claim from A]"
    Source B (raw/filename-b.md): "[exact claim from B]"
    LLM assessment ([model name/version]): [short plausibility analysis with reasoning]
+   Contradiction severity: hard | soft | scope
    Status: Unresolved — flagged for user review
    ```
 
@@ -539,6 +547,13 @@ When a contradiction is detected:
 | **Hard** | Two claims that cannot both be true under any interpretation | Flag immediately. Do not synthesize until resolved. |
 | **Soft** | Two claims that seem to conflict but may be compatible with added context | Flag and note the possible reconciliation. Proceed with synthesis but mark the output as tentative. |
 | **Scope mismatch** | One source is more general; the other is more specific | Keep both. Document the scope difference on each page. This is not a true contradiction but must be recorded clearly. |
+
+**Always record the chosen severity as the machine-readable `Contradiction severity: hard | soft | scope`
+line** on the flagged contradiction (see the page format and the flagging protocol above) — `scope` uses
+the `scope` token. The severity is not just advisory prose: any automation that gates on contradictions
+acts on it (e.g. holding a commit for human review on `hard` while auto-accepting `soft`/`scope` with an
+on-page flag), so a severity left implicit in prose can be misread. One explicit token per contradiction
+makes the decision deterministic.
 
 ### How to assist with resolution
 
@@ -703,6 +718,7 @@ Pages updated: page-d (added causal links), page-e (revised definition)
 Source A (raw/file-a.md): "[exact claim]"
 Source B (raw/file-b.md): "[exact claim]"
 LLM assessment ([model name/version]): [short plausibility analysis]
+Contradiction severity: hard | soft | scope
 Status: Unresolved — flagged for user review
 
 ## [YYYY-MM-DD HH:mm:ss] lint | Initial lint pass

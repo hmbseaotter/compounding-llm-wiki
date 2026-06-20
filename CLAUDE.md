@@ -151,7 +151,10 @@ One sentence. What is this, in plain language the target reader understands imme
                                                   Contradiction severity levels table, written
                                                   machine-readably so any automation can act on it
                                                   deterministically instead of guessing from prose.
-  Status: Unresolved — flagged for user review | Resolved — kept [A/B] because [reason]
+  Last reviewed: [model name], [YYYY-MM-DD HH:mm:ss] — [unchanged | re-evaluated: <what changed>]   ← equals the
+                                                  assessment timestamp at first flagging; bumped on every revisit
+                                                  (see Aging and revisiting soft contradictions).
+  Status: Unresolved — flagged for user review | Acknowledged — accepted as tentative (reviewed [ts]) | Resolved — kept [A/B] because [reason]
 
 ## Related
 - [[page-slug]] — one-line description of the relationship
@@ -268,7 +271,7 @@ what, if anything, eventually limits it].
 
 ## Contradictions flagged
 [Only include if a source conflict affects this chain.]
-- **[raw/file-a.md] vs [raw/file-b.md]:** [conflicting claims]. Contradiction severity: hard | soft | scope. Status: Unresolved | Resolved — [reason]
+- **[raw/file-a.md] vs [raw/file-b.md]:** [conflicting claims]. Contradiction severity: hard | soft | scope. Last reviewed: [model], [ts]. Status: Unresolved | Acknowledged — accepted as tentative | Resolved — [reason]
 
 ## Related
 - [[related-chain]] — description of how the chains connect
@@ -526,6 +529,9 @@ When a contradiction is detected:
    - Add a `Contradiction severity: hard | soft | scope` line — exactly one severity token from the
      severity table, machine-readable. Any automation that gates on severity keys off this token, so it
      is required, not optional; do not leave severity expressed only in prose.
+   - Add a `Last reviewed: [model], [timestamp]` line — equal to the assessment timestamp at first
+     flagging, then bumped each time the contradiction is re-examined (see *Aging and revisiting soft
+     contradictions*). Aging is measured by *time since last review*, not time since first flagged.
    - Set the status to `Unresolved — flagged for user review`.
 
 3. **Record it in `log.md`** immediately:
@@ -535,6 +541,7 @@ When a contradiction is detected:
    Source B (raw/filename-b.md): "[exact claim from B]"
    LLM assessment ([model name/version]): [short plausibility analysis with reasoning]
    Contradiction severity: hard | soft | scope
+   Last reviewed: [model name/version], [YYYY-MM-DD HH:mm:ss]
    Status: Unresolved — flagged for user review
    ```
 
@@ -565,6 +572,39 @@ When the user is ready to resolve a contradiction:
 4. Ask the user which claim to keep, or whether both can be true under different conditions.
 5. Update both affected pages and the log entry with the resolution and the reason.
 6. If both claims can coexist (e.g., true under different conditions), document the conditions on the page — do not discard a claim when its scope can be preserved.
+
+### Aging and revisiting soft contradictions
+
+`hard` contradictions are gated and resolved promptly, so they do not linger. `soft` and `scope` ones
+are recorded as **tentative** ("may be compatible with added context") and then proceed — so without a
+revisit mechanism they **accumulate silently**, and the synthesis quietly rests on provisional ground
+nobody re-examines. Two complementary triggers keep them honest:
+
+**1. Event-driven revisit (related evidence arrives).** A `soft`/`scope` contradiction is provisional
+*pending more context*, and new ingestion is that context arriving. Whenever a reasoning pass — an
+ingest contradiction-scan, or the scoped lint of a changed neighbourhood (see the Lint workflow's
+*Scope* rule) — covers a page carrying an unresolved or acknowledged contradiction, **re-assess it
+against the new material** and update its `Last reviewed:` line. Outcomes honour Hard rule 7 (never
+silently resolve):
+- *Still tentative* → bump `Last reviewed:` (`unchanged`); no human needed.
+- *Now hard* → **escalate**: set `Contradiction severity:` to `hard`, raising it to the human gate.
+  Escalating toward review is always safe to do automatically; de-escalating is not.
+- *Now reconcilable* → **propose** the resolution to the user — resolution stays a human decision.
+
+**2. Time-driven aging (no evidence arrives).** Some contradictions sit on pages no new source touches,
+so the event trigger never fires. A periodic **aging report** (where an automated pipeline exists it
+owns this; otherwise it is part of a manual lint) lists open `soft`/`scope` contradictions
+**oldest-`Last reviewed:` first**, and **escalates to a forced human decision** any that stay
+`Unresolved` *and* un-reviewed past a threshold (e.g. ~90 days, or N related ingests with no movement),
+so nothing rots in limbo.
+
+**The `Acknowledged` state — parking a reviewed contradiction.** Many soft contradictions are
+legitimately two compatible framings that should *both* stand permanently; forcing them to "resolve" is
+wrong. When the user has reviewed one and accepts it as tentative-but-fine, set its status to
+`Acknowledged — accepted as tentative (reviewed [ts])`. An acknowledged contradiction stays visible on
+the page but drops out of the "needs attention" aging report, keeping the report signal-rich instead of
+re-nagging decisions already made. So three lifecycle states: **Unresolved** (never reviewed),
+**Acknowledged** (reviewed, deliberately kept tentative), **Resolved** (decided).
 
 ---
 
@@ -675,6 +715,11 @@ differently:
 user asks for a "full lint", and as good practice at major milestones (e.g. after a large bootstrap
 ingest) to catch non-local drift an incremental pass could miss. State which scope you ran.
 
+Whenever a scoped pass covers a page carrying an **unresolved or acknowledged** contradiction, re-assess
+that contradiction against the new material and update its `Last reviewed:` line — this is how soft
+contradictions get revisited as related evidence arrives (see *Aging and revisiting soft contradictions*
+under Contradiction detection and resolution).
+
 Check for:
 - **Orphan pages** — `wiki/**` pages with no inbound `[[wikilinks]]` from other pages. Scope this to the synthesized layer only: `raw/NNNN_…/article.md` source packages are **expected** orphans (provenance, not graph nodes — see *The source layer is provenance*) and must **not** be flagged or "fixed" by wikilinking them.
 - **Missing pages** — concepts or entities mentioned in `[[wikilinks]]` that have no file (ignore `[[raw/...]]` source pointers — they reference source files, not wiki pages)
@@ -742,6 +787,7 @@ Source A (raw/file-a.md): "[exact claim]"
 Source B (raw/file-b.md): "[exact claim]"
 LLM assessment ([model name/version]): [short plausibility analysis]
 Contradiction severity: hard | soft | scope
+Last reviewed: [model name/version], [YYYY-MM-DD HH:mm:ss]
 Status: Unresolved — flagged for user review
 
 ## [YYYY-MM-DD HH:mm:ss] lint | Initial lint pass

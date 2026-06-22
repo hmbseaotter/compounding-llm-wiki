@@ -245,6 +245,22 @@ You resolve it; the tool then records your decision and the reason on both pages
 only thing it resolves on its own is an unambiguous _scope mismatch_ (one source general, one
 specific) — and even then it documents the scope on both pages rather than discarding a claim.
 
+### Contradiction QA tooling (optional automation)
+
+The contradiction *detection* above can be run as a small, **stdlib-only** tool so you (or the agent)
+don't have to eyeball every page. `tools/contradiction_qa.py` ships with this template but is
+**dormant** — it does nothing until you run it, and needs no setup:
+
+- **Tier 1 — run it (zero infrastructure).** `python tools/contradiction_qa.py --root .` scans every
+  `Status: Unresolved` marker across `wiki/**`, lists them by severity (hard vs soft/scope), and
+  prints the soft/scope **aging report** (oldest-reviewed first, flagging any past ~90 days). Run it
+  at lint time, or have the agent run it. No email, git, or scheduler involved — it only detects and
+  reports; resolution stays the manual judgment above.
+- **Tier 2 — automate it (optional).** To have the report emailed and aged on a schedule, wire the
+  module's `aging_report()` into a small daily job plus your mailer. The `llm-wiki-health-corpus`
+  repo's `corpus-nag.py` is a working reference for that shell. This is extra infrastructure and
+  entirely optional — the wiki is fully functional on Tier 1.
+
 ### Causal chains
 
 The wiki records cause-effect links with an explicit **direction token** on every link

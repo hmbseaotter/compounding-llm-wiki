@@ -510,6 +510,13 @@ Contradictions are a first-class concern. The wiki must actively find, record, a
 not just catch them passively during lint. An undetected contradiction is worse than a gap,
 because it produces confident wrong answers.
 
+> **Optional tooling.** A portable, stdlib-only `tools/contradiction_qa.py` automates the
+> deterministic parts of this section: it scans every `Status: Unresolved` marker across `wiki/**`,
+> classifies each by severity (hard vs soft/scope), and builds the soft/scope aging report. Run
+> `python tools/contradiction_qa.py --root .` at lint time (or have the agent run it) — it is dormant
+> until run and needs no email/scheduler setup. It only **detects and reports**; the plausibility
+> assessment and the resolution decision stay the human judgment described below.
+
 ### When to check for contradictions
 
 - **During every ingest** (step 4 above): every time an existing page is updated, compare the incoming claim against what the page already says. If they conflict, do not silently overwrite — flag the contradiction immediately.

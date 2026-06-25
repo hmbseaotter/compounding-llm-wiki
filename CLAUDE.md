@@ -828,3 +828,10 @@ page so attribution is preserved as the wiki is updated.
 7. **Never silently resolve a contradiction.** When two sources conflict, flag it, log it, and surface it to the user. Do not choose a side without human review unless it is an unambiguous scope mismatch with the scope documented on both pages.
 8. **Mark causation direction explicitly on every link.** Use: increase / decrease / activate / inhibit / trigger / suppress / enable / block. A causal link without a stated direction is incomplete and must be flagged during lint.
 9. **Never describe an image you have not opened.** Citing, summarizing, embedding-as-evidence, or even classifying an image requires having read that exact image with the Read tool. Guessing its contents from the surrounding text is fabrication — the same violation as inventing a source quote — and is the cause of false image citations. See Images and assets rule 3.
+
+## Prompt log (kept centrally, not in this repo)
+This project's prompt log is not stored in this repo. Per the workspace Prompt
+Recording Workflow (`cli_projects/CLAUDE.md`), it lives in the private,
+workspace-level `prompt-logs/` backup (see `prompt-logs/README.md` for the
+rationale — keeping logs out of repos that can go public). `project_prompts.txt`
+stays gitignored here as a guard.

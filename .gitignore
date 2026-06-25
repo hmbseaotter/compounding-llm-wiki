@@ -10,3 +10,7 @@ project_prompts.txt
 .DS_Store
 *.tmp
 .firecrawl/
+
+# Python bytecode cache
+__pycache__/
+*.pyc

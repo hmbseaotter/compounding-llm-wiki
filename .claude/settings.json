@@ -1,3 +1,31 @@
 {
-  "effortLevel": "high"
+  "effortLevel": "high",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\"",
+            "timeout": 10,
+            "statusMessage": "schema load-gate"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\"",
+            "timeout": 10,
+            "statusMessage": "schema load-gate"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -1,7 +1,16 @@
 # LLM Wiki Schema
 
-This file defines how this wiki works. It is the behavioral schema for the LLM that maintains it.
-The LLM reads this file at the start of every session before doing any ingest, query, or lint work.
+This file is the **lean core** of the behavioral schema for the LLM that maintains this wiki. It is
+the repo's `CLAUDE.md`, so it **auto-loads every session** — and it deliberately holds only what
+*every* session needs: what the wiki is, where things live, the cross-cutting invariants, model
+routing, and the Hard Rules.
+
+**Workflow-specific procedure lives in `schema/*.md` and loads on demand.** Before doing a given
+piece of work, read the matching detail file(s) in full — the **Workflow router** below says which.
+This keeps the always-loaded context small: a detail file enters context only when its workflow runs,
+instead of every session paying for the whole schema. A hook gate (`.claude/settings.json`) enforces
+the load — you cannot write a `wiki/**` page, `index.md`, or `log.md` without having read the matching
+`schema/` file in the current session, so the on-demand split never silently drops a rule.
 
 ---
 
@@ -22,7 +31,10 @@ pages.
 
 ```
 [project-wiki]/
-├── CLAUDE.md          ← this file — the behavioral schema (the rulebook the LLM reads every session)
+├── CLAUDE.md          ← lean-core schema, auto-loaded every session (this file)
+├── schema/            ← detailed workflow rules, loaded ON DEMAND via the Workflow router
+│   └── page-format.md · ingest.md · contradictions.md · causal.md · query.md · lint.md · formats.md
+├── .claude/settings.json ← hook gate: enforces the on-demand schema load before wiki/index/log writes
 ├── README.md          ← project overview and setup guide
 ├── LICENSE            ← MIT
 ├── index.md           ← catalog of every wiki page (the LLM keeps this current)
@@ -53,7 +65,7 @@ the relative image links inside the text (e.g. `![alt](images/figure-001.png)`) 
 without any edits. Never flatten assets into a shared folder — filenames collide across sources
 (many have a `cover.jpg`) and flattening would force rewriting links inside the source, violating
 the immutability rule. The folder name is `NNNN_<slug>` — a frozen catalog ID followed by a unique
-kebab-case slug. See Source folder naming under File naming.
+kebab-case slug. See Source folder naming in `schema/ingest.md`.
 
 **The wiki root may be a dedicated directory or may coincide with an existing repository root.**
 When embedded in a larger repo, `index.md`, `log.md`, and the `wiki/` and `raw/` folders live at
@@ -80,226 +92,34 @@ Every wiki page has one of six types. Use the type that best fits the primary pu
 
 ---
 
-## Page format
+## Workflow router
 
-Every wiki page must follow this template exactly. Omit sections that genuinely do not apply,
-but do not invent sections not listed here.
+Read the listed `schema/*.md` file(s) **in full, first**, before doing the work — they carry the
+detail this lean core omits. The hook gate enforces the load at the point of mutation; this table is
+the authority on what to read for each task.
 
-```markdown
----
-type: concept | tool | workflow | setup-guide | causal-chain | metaphor
-sources: [list of raw/ paths this page draws from, e.g. raw/0003_03-sample-article/article.md]
-external_knowledge: []   ← populated only if LLM knowledge fills a gap; each entry must cite a reputable source AND name the model used
-moc_mirror: swapped-operand-slug   ← OPTIONAL, only on `-vs-` pages. The swapped-operand form of this page's slug (e.g. on functional-vs-conventional-paradigm → moc_mirror: conventional-vs-functional-paradigm). The home-page-moc generator reads it to emit a mirror entry under the other letter. It cannot be derived by string-swapping (a shared trailing noun must stay pinned), so it must be declared here.
-tags: [2-5 lowercase tags]
-last_updated: YYYY-MM-DD HH:mm:ss
----
+| When you are… | Read first | Gate trips on |
+|---|---|---|
+| Acquiring a URL source | `schema/ingest.md` | — |
+| Ingesting a raw source | `schema/ingest.md` + `schema/page-format.md`; add `schema/contradictions.md` when updating an existing page | `wiki/**` write |
+| Writing or editing any wiki page | `schema/page-format.md` | `wiki/**` write |
+| Building a causal-chain page | `schema/page-format.md` + `schema/causal.md` | `wiki/causal-chains/**` write |
+| Answering a reader question | `schema/query.md`; add `schema/causal.md` if the question is causal | — |
+| Running a lint pass | `schema/lint.md` + `schema/contradictions.md` | `wiki/**` write |
+| Flagging or resolving a contradiction | `schema/contradictions.md` | `wiki/**` write |
+| Updating `index.md` or `log.md` | `schema/formats.md` | `index.md` / `log.md` write |
 
-# [Page Title]
-
-## One-liner
-One sentence. What is this, in plain language the target reader understands immediately.
-
-## What it is
-2-4 sentences. The concept, mechanism, or purpose. WHY it matters, not just what it is.
-
-## How it works
-[For concepts: the mechanism explained simply.]
-[For tools: what the tool does and how it connects to the domain.]
-[For workflows: numbered steps.]
-[For setup-guides: numbered steps with exact commands or UI actions.]
-[For causal-chains: see the Causal chain page format section below.]
-[For metaphors: the full analogy and what each part maps to.]
-
-## When to use it
-[For concepts: when this concept becomes relevant in practice.]
-[For tools: what problem this tool solves and when to reach for it.]
-[For workflows: the trigger condition — when should someone run this workflow?]
-[For setup-guides: prerequisites and when setup is needed.]
-[For metaphors: which teaching moment this metaphor is designed for.]
-
-## What causes this   ← Optional. Include on concept pages when this entity is an outcome or effect.
-- [[upstream-entity]] — [increase | decrease | activate | inhibit | trigger | other]: [brief mechanism]
-- [[another-upstream]] — [direction]: [brief mechanism]
-
-## What this causes   ← Optional. Include on concept pages when this entity has downstream effects.
-- [[downstream-entity]] — [increase | decrease | activate | inhibit | trigger | other]: [brief mechanism]
-- [[another-downstream]] — [direction]: [brief mechanism]
-
-> **Mandatory format for causal bullets.** Every bullet in `What causes this` / `What this causes`
-> MUST lead with the target and an explicit direction token, then a colon, then prose:
-> `- [[entity]] — <direction>: <mechanism>`. Use a wikilink when the target has, or warrants, its own
-> page; otherwise use a plain **bold** noun phrase for the target (`- **detail fidelity** — decrease:
-> …`). Do not bury the target or the direction inside a prose sentence (write
-> `- [[compaction]] — trigger: at ~70-80% full, detail is summarized away`, NOT
-> `- When the window fills, [[compaction]] triggers and detail is lost`). The lead `target —
-> <direction>` is what makes upstream/downstream traversal and the symptom→cause-tree query reliable;
-> the prose after the colon is for the human reader.
-
-## Gotchas
-[Optional. Only include if the source material explicitly calls out a common mistake,
- a counterintuitive behavior, or a failure mode worth knowing.]
-
-## See source for fuller detail   ← Optional and RARE. Only when this page deliberately compresses
-                                     something a reader would plausibly want in full. See the rule below.
-- [brief description of what was condensed] — [[raw/0001_…/article.md]]
-
-## Contradictions flagged   ← Only include when a known source conflict applies to this page.
-- **[raw/file-a.md] vs [raw/file-b.md]:** [Description of conflicting claims.]
-  LLM assessment ([model name], [YYYY-MM-DD HH:mm:ss]): [short plausibility analysis — see contradiction protocol]
-  Contradiction severity: hard | soft | scope   ← REQUIRED. Exactly one token — the severity from the
-                                                  Contradiction severity levels table, written
-                                                  machine-readably so any automation can act on it
-                                                  deterministically instead of guessing from prose.
-  Last reviewed: [model name], [YYYY-MM-DD HH:mm:ss] — [unchanged | re-evaluated: <what changed>]   ← equals the
-                                                  assessment timestamp at first flagging; bumped on every revisit
-                                                  (see Aging and revisiting soft contradictions).
-  Status: Unresolved — flagged for user review | Acknowledged — accepted as tentative (reviewed [ts]) | Resolved — kept [A/B] because [reason]
-
-## Related
-- [[page-slug]] — one-line description of the relationship
-```
-
-### The "See source for fuller detail" pointer — use it sparingly
-
-Every wiki page is a deliberate compaction of its source: it synthesizes and drops detail by design.
-Usually that is fine — the `sources:` frontmatter already records where the page came from, and `raw/`
-is always available. The `See source for fuller detail` section is for the **occasional** case where a
-page knowingly omits something a reader would plausibly want in full — e.g. the source lists six
-sub-steps and the page summarizes them in one line, or the source gives exact figures the page rounds.
-
-Rules:
-1. **This is a rare, deliberate affordance — not a disclaimer.** It must point at a *specific* omission worth drilling into, with a one-line description of what was condensed and a link to the source.
-2. **Never add it as boilerplate.** Do not put a generic "some detail may have been omitted, see source" on every page. A pointer that appears everywhere is noise readers learn to ignore, and it drowns out the rare pointer that actually matters. If in doubt, leave it off.
-3. **It does not replace `sources:`.** Every page still lists its sources in frontmatter regardless; this section is an in-body signpost to a particular compressed spot, used only when that spot is worth flagging.
+The deterministic shell checks in lint/ingest (orphans, missing pages, broken links) need no detail
+file. Reasoning-heavy work — lint, causal-chain construction, contradiction analysis — additionally
+routes to a subagent with a model override per **Model selection** below; pass the subagent the same
+"read `schema/X.md` first" instruction so it loads only the slice its task needs.
 
 ---
 
-## Causal chain page format
+## Cross-cutting invariants
 
-`causal-chain` pages use this format instead of the generic template above.
-
-```markdown
----
-type: causal-chain
-sources: [list of raw/ paths this chain draws from, e.g. raw/0003_03-sample-article/article.md]
-external_knowledge:
-  - claim: "[the bridging claim supplied by LLM general knowledge]"
-    source: "[reputable source — author, publication, year, or URL]"
-    model: "[exact model name/version that supplied this knowledge, e.g. claude-sonnet-4-6]"
-    added: "[YYYY-MM-DD HH:mm:ss]"
-tags: [tags]
-last_updated: YYYY-MM-DD HH:mm:ss
----
-
-# [Chain Name] — Causal Pathway
-
-## One-liner
-One sentence: what is the trigger, and what is the end state this chain traces?
-
-## Chain (visual)
-
-Two synced renderings of the ordered flow (both mirror the canonical Links table below).
-
-**(a) Mermaid flowchart** (preferred) — renders as a graphical diagram on GitHub, in Obsidian, and
-in VS Code with a Mermaid extension. Use `flowchart TD`, one node per entity, the direction token on
-each edge label, and for a feedback loop draw the edge back to the earlier node with `↺` in its label:
-
-```mermaid
-flowchart TD
-  T[Trigger / root cause] -->|increase| A[Effect A]
-  A -->|decrease| B[Effect B]
-  B -->|trigger| C1[Effect C1]
-  B -->|trigger| C2[Effect C2]
-  C2 -->|"↺ increase"| A
-```
-
-**(b) ASCII fallback** — a plain-text version in a fenced code block that renders in any viewer with
-no extension. At a branch, indent the sub-paths; for a feedback loop, draw the final arrow back to
-the earlier node it feeds and label it `↺ loop`:
-
-```
-[Trigger / Root cause]
-      ↓ increases
-[Effect A]
-      ↓ decreases
-[Effect B]
-      ↓ triggers
-[Branching node] ──► [Effect C1]   (decrease)
-                 └─► [Effect C2]   (increase)
-```
-
-## Links (canonical)
-
-The machine-traversable representation — one row per causal edge. This table is the source of truth
-for traversal and the symptom→cause-tree query; the diagram above is just its picture. Every row
-MUST have an explicit direction token and a Source. Quote the source where possible (it makes each
-link auditable); use `EXTERNAL` for any link supplied by LLM general knowledge (and fill in the
-`external_knowledge` frontmatter + `External knowledge used` section).
-
-| From | Direction | To | Mechanism | Source |
-|------|-----------|----|-----------|--------|
-| [[trigger-page]] | increase | [[effect-a-page]] | how the trigger causes A | raw/00NN_…/article.md — "quote" |
-| [[effect-a-page]] | decrease | [[effect-b-page]] | how A causes B | raw/00NN_…/article.md — "quote" |
-| [[effect-b-page]] | trigger | [[c1-page]] | how B causes C1 | EXTERNAL |
-| [[effect-b-page]] | increase | [[c2-page]] | how B causes C2 | raw/00NN_…/article.md — "quote" |
-
-(Branches are simply two rows sharing the same `From`. Direction token vocabulary: increase /
-decrease / activate / inhibit / trigger / suppress / enable / block.)
-
-**Feedback loops (cyclic chains).** A chain is a *loop* when a later node feeds back into an earlier
-one. Represent the loop-back as a normal Links row whose `To` is an earlier node in the chain, and
-mark that row by prefixing the `To` cell with `↺ ` (e.g. `↺ [[effect-a-page]]`) so traversal can
-detect that the edge closes a cycle rather than continuing forward. Every cyclic chain MUST also
-carry a `## Loop` section (below) naming the loop-back edge and whether the loop is **reinforcing**
-(amplifies — each pass strengthens the cycle, e.g. a virtuous/vicious circle) or **balancing**
-(dampens — each pass moves toward equilibrium). A chain with no loop-back row is linear; omit the
-`## Loop` section for it.
-
-## Node index
-All nodes in this chain, in order: [[trigger-page]], [[effect-a-page]], [[effect-b-page]], [[c1-page]], [[c2-page]]
-[For a cyclic chain, append: `(cyclic: [[last-node]] loops back to [[earlier-node]])`.]
-
-## Loop   ← Only for cyclic chains (feedback loops). Omit entirely for linear chains.
-This chain is a feedback loop: [[last-node]] feeds back into [[earlier-node]] (<direction>), making
-it **reinforcing** | **balancing**. One pass around the loop: [one line on what each cycle does and
-what, if anything, eventually limits it].
-
-## External knowledge used
-[Only include if any link came from LLM general knowledge rather than a source document.]
-- **[Bridging claim]** — Source: [reputable citation] — Model: [model name/version] — Added: [YYYY-MM-DD HH:mm:ss]
-
-## Contradictions flagged
-[Only include if a source conflict affects this chain.]
-- **[raw/file-a.md] vs [raw/file-b.md]:** [conflicting claims]. Contradiction severity: hard | soft | scope. Last reviewed: [model], [ts]. Status: Unresolved | Acknowledged — accepted as tentative | Resolved — [reason]
-
-## Related
-- [[related-chain]] — description of how the chains connect
-```
-
----
-
-## File naming
-
-- Use kebab-case for all wiki page filenames: `context-window.md`, `manual-compaction.md`
-- Match the page title closely but keep it short: `water-tank.md` not `the-water-tank-metaphor-for-context-capacity.md`
-- Wikilinks use the filename without extension: `[[context-window]]`, `[[manual-compaction]]`
-- **Use sentence case for page titles and all headings** — capitalize only the first word plus proper
-  nouns and literal tokens (`Firecrawl`, `CLAUDE.md`); do not use title case. Write `## How it works`,
-  not `## How It Works`. This matches the standard documentation style (Google / Microsoft / GitHub
-  guides) and is easier to apply consistently than per-word title-case judgments. Two deliberate
-  exceptions, both proper labels rather than prose headings: a document's H1 title (e.g. the wiki's own
-  name) and the fixed page-type category labels in `index.md` (`Concepts`, `Tools`, `Setup Guides`,
-  `Causal Chains`, `Metaphors`).
-
-### Source folder naming
-
-Each source folder in `raw/` is named `NNNN_<slug>`:
-
-- **`NNNN`** is a zero-padded 4-digit **catalog ID** — exactly four numeric digits, `0`–`9` only (no letters, no hex, no symbols), matching `^[0-9]{4}$`. It is assigned in sequence the moment the source is added to `raw/` (`0001`, `0002`, …) and gives every source — numbered series and one-off alike — a uniform, sortable, unique handle.
-- **`<slug>`** is a unique kebab-case name for the source. If the source carries its own meaningful sequence (e.g. a numbered article series), keep that inside the slug (`0003_03-sample-article`): the catalog ID is additive metadata, not a replacement for the source's own ordering.
-- **The catalog ID is a stable handle, not an ingestion-order field.** True ingestion chronology lives in `log.md` with full timestamps — do not infer it from the catalog ID.
-- **Assign once, freeze forever.** The folder name is embedded in every page's `sources:` frontmatter and in image link-back paths, so it is load-bearing. If a source is ever removed, **leave the gap** — never renumber existing folders.
+These hold across ingest, lint, and query alike, so they stay in the always-loaded core rather than
+in any single workflow file. (The Hard Rules at the end of this file are also always-loaded.)
 
 ### Path conventions (two distinct kinds)
 
@@ -323,7 +143,7 @@ Consequences to expect and **not** to "fix" by integrating sources into the grap
 - Every source node is **labelled `article`** — Obsidian labels a node by its *filename*, not its H1,
   and the pipeline names every source package `article.md` (the descriptive name is on the *folder*).
   Do **not** rename `article.md` to make labels descriptive: source paths are frozen and load-bearing
-  (see *Source folder naming*), so a rename silently breaks every citing page for a cosmetic label.
+  (see *Source folder naming* in `schema/ingest.md`), so a rename silently breaks every citing page for a cosmetic label.
 
 **Exclude the source layer from Graph View** so the graph shows only the synthesized knowledge web:
 in the graph's search/filter box (or `.obsidian/graph.json` `"search"`, which is machine-local and
@@ -340,7 +160,7 @@ merely because its target page is absent.
 
 A forward link resolves **automatically** the moment a page file with the matching name is created —
 no edit to the linking pages is needed. Whether a later ingest may create that page under the wanted
-slug is governed by the orphaned-forward-link check in the Ingest workflow (step 3): the slug is
+slug is governed by the orphaned-forward-link check in the Ingest workflow (`schema/ingest.md`, step 3): the slug is
 claimed only when the new page is the **same entity** the linking text refers to, not merely the same
 subject. While a forward link remains unresolved and a closely related page exists, the link site may
 carry a pending-pointer — `[[wanted-slug]] *(page pending — closest coverage: [[other-page]])*` —
@@ -380,443 +200,6 @@ Routing rules:
 
 ---
 
-## Source acquisition from URL
-
-Run this workflow when the user provides a URL to add as a source (e.g. "add source <URL>"). It
-automates what the manual route does by hand — download the page as markdown plus its images,
-package them into a self-contained folder in `raw/`. The manual route (user saves the page
-themselves and drops the folder into `raw/`) remains the documented fallback for anything the
-automation cannot fetch: gated/paywalled pages, or no fetch engine available.
-
-1. **Fetch the page as main-content markdown.** Current engine: Firecrawl CLI —
-   `firecrawl scrape <URL> --only-main-content -f markdown -o <staging>/article.md`. The workflow
-   is engine-agnostic: any fetcher that produces clean main-content markdown is acceptable; if no
-   engine is available, say so and point the user to the manual fallback. Build the package in a
-   staging location first — it moves into `raw/` only once finalized, and immutability begins at
-   that moment.
-2. **Download every referenced content image** into `images/` beside the markdown. Skip obvious
-   non-content assets (tracking pixels, social/share buttons, comment-widget avatars). Do NOT
-   judge illustrative vs decorative here — that judgment belongs to the ingest workflow; `raw/` is
-   the archive, so keep everything that is part of the article.
-3. **Rewrite image links** in the markdown to relative `images/<filename>` paths so the package is
-   self-contained and portable, exactly like a manually added source.
-4. **Record provenance** as frontmatter at the top of `article.md`: `source_url`, `retrieved`
-   (YYYY-MM-DD HH:mm:ss), `engine` (tool + version). The archival copy is a snapshot of a live
-   page that can change or vanish, so provenance must be captured at creation time. This is part
-   of *creating* the source, not a modification of an immutable file.
-5. **Package into `raw/`:** assign the next catalog ID `NNNN`, derive a kebab-case slug from the
-   page title, move the staging folder to `raw/NNNN_<slug>/` (containing `article.md` + `images/`).
-6. **QA-assess the fetched content** — read the markdown and check:
-   - title and author present; content reads complete — no paywall stub or truncation (a gated
-     post fetched without credentials typically ends abruptly at a subscribe prompt);
-   - no leftover navigation, widget, or comment-section junk;
-   - every rewritten image link resolves to a downloaded file; image count plausible vs the page.
-7. **Append to `log.md`:** `## [YYYY-MM-DD HH:mm:ss] acquire | <URL> → raw/NNNN_<slug>/`, including
-   the engine used and the QA result.
-8. **Ask the user whether to ingest now, surfacing the QA findings** so the decision is informed.
-   Acquisition never auto-triggers ingestion — a bad scrape must not flow into the wiki.
-
-> **Paywalled pages — why a logged-in URL is not enough.** Access to subscriber-only content lives
-> in the browser's session cookies, not in the URL: the same URL serves the full article to a
-> logged-in browser and a public preview to everyone else. The fetch engine does not share the
-> user's browser session, so it receives the preview. Out of scope for now; use the manual
-> fallback (save the page from the logged-in browser, drop it into `raw/` per the standard
-> workflow).
-
----
-
-## Ingest workflow
-
-Run this workflow when a new raw source is added or an existing source is updated.
-
-1. **Read** the raw source document in full.
-2. **Identify** all entities worth a wiki page:
-   - Concepts (abstract ideas, named entities, domain terms)
-   - Tools (named tools, integrations, systems, named interventions)
-   - Workflows (repeatable processes with steps)
-   - Setup guides (installation or configuration sequences)
-   - Causal relationships (cause-effect links — see step 5)
-   - Metaphors (named analogies used to explain a concept)
-3. **Check orphaned forward links before naming any new page:**
-   - Compute the wanted-slug list: every `[[wikilink]]` across `wiki/` and `index.md` that has no matching page file. Ignore `[[raw/...]]` source pointers — they reference source files, not wiki pages. This is one cheap shell pass (seconds, always ground truth — no separate index file is kept), e.g.:
-     `comm -23 <(rg -oI '\[\[[^\]#|]+' wiki index.md | sed 's/^\[\[//' | sort -u) <(find wiki -name '*.md' -exec basename {} .md \; | sort -u)`
-   - For each new entity that resembles a wanted slug, grep for that `[[slug]]` and **read the linking sentences in context** to recover what the original link meant.
-   - Reuse the wanted slug **only if the new page is genuinely the same entity** the linking text refers to — not merely the same subject. Forward links target future pages about entities, never specific source documents, so any source that truly covers the entity may create the page; later sources then update that same page.
-   - **When uncertain, do not claim the slug.** Create the page under its own natural name, and at each orphaned link site append a pending-pointer in this exact form: `[[wanted-slug]] *(page pending — closest coverage: [[new-page]])*`. Lint removes the pointer once the wanted page exists. A wrongly claimed slug is silent corruption — the link "works" but points at the wrong entity; a still-orphaned link is a visible, recoverable gap.
-4. **For each entity:**
-   - If no wiki page exists: create one using the page format above.
-   - If a page exists: read it, then update it — add new information, update `sources` and `last_updated` frontmatter.
-   - **On every update, actively scan for contradictions** between the incoming source and what the page already says. See the Contradiction detection and resolution section. Do not silently overwrite — flag every conflict.
-5. **Identify causal relationships:**
-   - Scan for causal language: "causes," "leads to," "triggers," "results in," "inhibits," "suppresses," "increases," "decreases," "is associated with," "activates," "blocks," and domain-specific equivalents. Include cause-effect relationships depicted in kept images (diagram arrows, flow charts) — see Images and assets rule 3.
-   - For each causal statement, identify the source node and target node. Record the direction of effect (increase / decrease / activate / inhibit / trigger / suppress / other).
-   - Add or update `What causes this` and `What this causes` sections on the relevant concept pages.
-   - If a chain of three or more links can be assembled (A → B → C or longer), create or update a `causal-chain` page in `wiki/causal-chains/`. **When ingesting on a non-Opus subagent (the normal case), defer this:** log the chain under a `Causal-chain candidates` block in `log.md` and let the batched Opus `/wiki-compile` pass (step 10) build it — but still add the `What causes this` / `What this causes` concept-page bullets now.
-   - If a causal link is not supported by any source document, mark it EXTERNAL and cite the reputable source used. See the Causal chain capability section.
-6. **Handle images and assets** — see the Images and assets section below.
-7. **Update `index.md`:** add or update the entry for every page touched.
-8. **Append to `log.md`:** one entry per ingest, format: `## [YYYY-MM-DD HH:mm:ss] ingest | [Source Title]`
-9. **Regenerate `home-page.md`** as the last build step of the ingest — run the `home-page-moc`
-   generator skill (`python <skills>/home-page-moc.py --root .`). This rewrites the Obsidian Map of
-   Content from the current page set so it never drifts. `home-page.md` is a build artifact — never
-   hand-edit it. If this ingest created a new `-vs-` page, add a `moc_mirror: <swapped-operand-slug>`
-   line to that page's frontmatter *before* regenerating, so its mirror entry appears under the other
-   letter (the spelling cannot be derived by string-swapping; see Page format).
-10. **Check the round boundary — don't let the finishing step be forgotten.** Ingestion defers the
-    reasoning-heavy work: causal-chain construction (step 5) and the lint pass run as a batched
-    **Opus** pass, the `/wiki-compile` skill — not per ingest. The one reliable trigger for that pass
-    is the *end of a round of ingestion*, which only the user knows. So after completing this ingest,
-    **ask the user**:
-    > "Was this the last ingest in this round? If yes, I'll run `/wiki-compile` now — the finishing
-    > step that builds the logged causal-chain candidates into pages and lints the new material so it
-    > is fully usable. If more sources are queued, I'll defer and re-ask after the last one."
-    Run `/wiki-compile` when the user confirms the round is done. **Backstop:** even mid-round, if the
-    `Causal-chain candidates` logged in `log.md` since the last compile exceed ~15, surface that and
-    offer to compile now, so a very long batch never sits un-compiled. `/wiki-compile` is itself safe
-    to run anytime — its STEP 0 dirty-check exits cheaply (no Opus spend) when there is nothing to do,
-    which also makes it the right pass to run after manual Obsidian edits (lint + MOC reconcile).
-
-One source document typically touches 8–15 wiki pages. Cross-link liberally — if page A mentions a
-concept that has its own page B, add `[[page-b]]` to A's Related section.
-
----
-
-## Images and assets
-
-Source documents may contain images. Some carry real explanatory value (a diagram of a mechanism, a
-chart, an annotated screenshot); others are decorative — placed only to break up long text and
-conveying no information the page depends on. During ingest, decide per image which it is.
-
-Rules:
-
-1. **Judge each image in context.** Read the image (filename, alt text, and the image itself) against the surrounding text. Ask: does the text rely on this image to be understood, or is it a visual breather? This is a judgment call the ingesting model makes while reading the source.
-2. **Preserve illustrative images by linking back into `raw/`.** When an image carries explanatory value and belongs on a wiki page, reference it from that page with a relative link into the immutable source folder — e.g. from `wiki/metaphors/water-tank.md`: `![Water tank](../../raw/0003_03-sample-article/images/water-tank.png)`. Do not copy, move, or rename the image. Raw is immutable, so the path is stable.
-3. **Open every image before you cite, summarize, embed, or skip it.** Never attribute content to an image you have not actually opened with the Read tool. Naming an image as the source of a claim (`raw/…/images/foo.png`), describing what a diagram or table shows, embedding it as evidence for a specific statement, or even classifying it decorative-vs-illustrative all require that you have read **that exact image** first. Inferring an image's contents from the surrounding prose — "the text here is about narrow commands, so the adjacent image probably shows that" — is **fabrication**, the same violation as inventing a source quote, and it produces confident false citations. If you have not opened an image, you may not describe it, cite it, or judge it: leave it unprocessed and let the lint pass (and its unreferenced-image check) surface it. When an ingest is interrupted, un-opened images are simply unfinished work — never paper over the gap with a guess.
-4. **Synthesize image-borne information into the page text.** For every image kept as illustrative, read it and ask a second question: does it contain information **absent from the surrounding text** — figures, labels, table contents, steps in an annotated screenshot, cause-effect arrows in a diagram? If yes, that information MUST be written into the relevant page sections as text, in addition to linking the image — including causal bullets when the image depicts cause-effect. When the image depicts arrows/flows, **read each arrow's direction from its actual arrowheads at both ends, never from the diagram's overall layout**: a head at one end is one-way, heads at both ends are bidirectional. A missed second arrowhead silently turns a mutually-reinforcing (bidirectional) relationship into a one-way one and inverts the causal topology — so on a causal-chain page, render a double-headed arrow as two reciprocal links, not one. Bidirectional and upstream-pointing arrows are easiest to miss when they run counter to the expected flow or are short. A linked picture alone is invisible to wiki queries, search, and causal traversal; image-borne knowledge that stays only in the image is lost to every reader who doesn't open it. Image-derived claims are **source-grounded, not EXTERNAL** (the image is part of the source document), but cite the image path (`raw/NNNN_…/images/foo.png`) alongside the claim so it stays traceable to what a reader can verify. If part of an image is illegible (dense or small text in a screenshot), record what could not be read rather than guessing — the same no-fabrication discipline as everywhere else. When you reproduce text **verbatim** from an image (a quote, a transcribed label, a table cell), keep each transcribed sentence or cell on a single line and faithful to the source — do **not** inject newlines mid-sentence to hit a column width. Such breaks are arbitrary, do not mirror the image, and make the transcription unfaithful; this applies to quoted/transcribed image text specifically (the page's own explanatory prose follows the wiki's normal wrapping).
-5. **Skip decorative images.** Do not link images whose only purpose is to break up text. Noting their existence is unnecessary.
-6. **Never duplicate binaries into `wiki/`.** The wiki layer is synthesized text that points at source assets; it does not hold its own copies.
-7. **When in doubt, lean toward preserving.** A wrongly-kept image is low-cost; a wrongly-dropped illustrative one loses information. The lint pass can review borderline calls.
-8. **PDF-derived sources: deposit lightweight images, keep the original PDF as the master.** When a source is a PDF rasterized to per-page/per-slide images, distinguish two image generations with different jobs:
-   - **Extraction images are transient.** The high-DPI PNGs (~200 DPI) produced to feed vision text/relationship extraction are *working files*, not archive material. They do **not** go into `raw/`. (The vision model downsamples to ~1568 px ≈ 150 DPI anyway, so 200 DPI buys nothing once extraction is done.)
-   - **Deposit lightweight JPEGs in `raw/`.** Store per-page **JPEG at ~150 DPI** in the source folder's `images/` (e.g. `raw/0023_…/images/0387.jpg`). These exist only to render **inline** beside their extracted text and for human reference, so viewing quality is enough; this keeps `raw/` an order of magnitude smaller. Re-render them **straight from the PDF** (one clean generation), not by recompressing the extraction PNGs.
-   - **Archive the original PDF once as `raw/_master/<file>.pdf`** — the full-fidelity fallback. `_master/` is a reserved non-`NNNN_` folder holding source masters shared across the PDF's derived lesson/section folders.
-   - **A PDF does not render inline in markdown** (`![](x.pdf)` does not embed — you get only a click-to-open link). So the PDF is the reference-on-demand copy, never the embed. Every PDF-derived `article.md` MUST carry a one-line pointer to its master (`../_master/<file>.pdf`, opens in a new tab) so a reader who needs full fidelity of any page can reach it.
-
----
-
-## Contradiction detection and resolution
-
-Contradictions are a first-class concern. The wiki must actively find, record, and surface them —
-not just catch them passively during lint. An undetected contradiction is worse than a gap,
-because it produces confident wrong answers.
-
-> **Optional tooling.** A portable, stdlib-only `tools/contradiction_qa.py` automates the
-> deterministic parts of this section: it scans every `Status: Unresolved` marker across `wiki/**`,
-> classifies each by severity (hard vs soft/scope), and builds the soft/scope aging report. Run
-> `python tools/contradiction_qa.py --root .` at lint time (or have the agent run it) — it is dormant
-> until run and needs no email/scheduler setup. It only **detects and reports**; the plausibility
-> assessment and the resolution decision stay the human judgment described below.
-
-### When to check for contradictions
-
-- **During every ingest** (step 4 above): every time an existing page is updated, compare the incoming claim against what the page already says. If they conflict, do not silently overwrite — flag the contradiction immediately.
-- **During every query that combines two or more pages**: before synthesizing, check whether the pages being combined make compatible claims. If not, surface the conflict to the user rather than picking a side.
-- **During lint**: sweep all pages for internal consistency as a backstop.
-
-### How to flag a contradiction
-
-When a contradiction is detected:
-
-1. **Produce an LLM assessment** of the discrepancy. Analyze both claims against general knowledge of related facts and state which claim is more plausible and why, with a confidence qualifier. Example: "Based on general knowledge of related facts, claim A is far more plausible than claim B because [reasoning]." This assessment is advisory input for the user — it is never grounds for silently resolving the conflict. The assessment must always record the exact model name/version that produced it and a full timestamp, because assessment quality depends on which model performed the analysis.
-
-2. **Record it on both affected pages** under `## Contradictions flagged`:
-   - Name both source documents.
-   - State exactly what each source says.
-   - Include the LLM assessment with model name and timestamp.
-   - Add a `Contradiction severity: hard | soft | scope` line — exactly one severity token from the
-     severity table, machine-readable. Any automation that gates on severity keys off this token, so it
-     is required, not optional; do not leave severity expressed only in prose.
-   - Add a `Last reviewed: [model], [timestamp]` line — equal to the assessment timestamp at first
-     flagging, then bumped each time the contradiction is re-examined (see *Aging and revisiting soft
-     contradictions*). Aging is measured by *time since last review*, not time since first flagged.
-   - Set the status to `Unresolved — flagged for user review`.
-
-3. **Record it in `log.md`** immediately:
-   ```
-   ## [YYYY-MM-DD HH:mm:ss] contradiction | [Page title]
-   Source A (raw/filename-a.md): "[exact claim from A]"
-   Source B (raw/filename-b.md): "[exact claim from B]"
-   LLM assessment ([model name/version]): [short plausibility analysis with reasoning]
-   Contradiction severity: hard | soft | scope
-   Last reviewed: [model name/version], [YYYY-MM-DD HH:mm:ss]
-   Status: Unresolved — flagged for user review
-   ```
-
-4. **Notify the user** in the current session. Do not silently resolve by choosing one source. Present both sides clearly, include the LLM assessment as advisory input, and ask the user to review.
-
-### Contradiction severity levels
-
-| Severity | Description | Action |
-|----------|-------------|--------|
-| **Hard** | Two claims that cannot both be true under any interpretation | Flag immediately. Do not synthesize until resolved. |
-| **Soft** | Two claims that seem to conflict but may be compatible with added context | Flag and note the possible reconciliation. Proceed with synthesis but mark the output as tentative. |
-| **Scope mismatch** | One source is more general; the other is more specific | Keep both. Document the scope difference on each page. This is not a true contradiction but must be recorded clearly. |
-
-**Always record the chosen severity as the machine-readable `Contradiction severity: hard | soft | scope`
-line** on the flagged contradiction (see the page format and the flagging protocol above) — `scope` uses
-the `scope` token. The severity is not just advisory prose: any automation that gates on contradictions
-acts on it (e.g. holding a commit for human review on `hard` while auto-accepting `soft`/`scope` with an
-on-page flag), so a severity left implicit in prose can be misread. One explicit token per contradiction
-makes the decision deterministic.
-
-### How to assist with resolution
-
-When the user is ready to resolve a contradiction:
-
-1. Show both conflicting claims side by side with their source documents.
-2. Present the recorded LLM assessment (with its model name and timestamp). If the current session runs a different model than the one that produced the recorded assessment, offer to re-run the analysis with the current model.
-3. Note which source is more recent, more authoritative, or more specific — if determinable.
-4. Ask the user which claim to keep, or whether both can be true under different conditions.
-5. Update both affected pages and the log entry with the resolution and the reason.
-6. If both claims can coexist (e.g., true under different conditions), document the conditions on the page — do not discard a claim when its scope can be preserved.
-
-### Aging and revisiting soft contradictions
-
-`hard` contradictions are gated and resolved promptly, so they do not linger. `soft` and `scope` ones
-are recorded as **tentative** ("may be compatible with added context") and then proceed — so without a
-revisit mechanism they **accumulate silently**, and the synthesis quietly rests on provisional ground
-nobody re-examines. Two complementary triggers keep them honest:
-
-**1. Event-driven revisit (related evidence arrives).** A `soft`/`scope` contradiction is provisional
-*pending more context*, and new ingestion is that context arriving. Whenever a reasoning pass — an
-ingest contradiction-scan, or the scoped lint of a changed neighbourhood (see the Lint workflow's
-*Scope* rule) — covers a page carrying an unresolved or acknowledged contradiction, **re-assess it
-against the new material** and update its `Last reviewed:` line. Outcomes honour Hard rule 7 (never
-silently resolve):
-- *Still tentative* → bump `Last reviewed:` (`unchanged`); no human needed.
-- *Now hard* → **escalate**: set `Contradiction severity:` to `hard`, raising it to the human gate.
-  Escalating toward review is always safe to do automatically; de-escalating is not.
-- *Now reconcilable* → **propose** the resolution to the user — resolution stays a human decision.
-
-**2. Time-driven aging (no evidence arrives).** Some contradictions sit on pages no new source touches,
-so the event trigger never fires. A periodic **aging report** (where an automated pipeline exists it
-owns this; otherwise it is part of a manual lint) lists open `soft`/`scope` contradictions
-**oldest-`Last reviewed:` first**, and **escalates to a forced human decision** any that stay
-`Unresolved` *and* un-reviewed past a threshold (e.g. ~90 days, or N related ingests with no movement),
-so nothing rots in limbo.
-
-**The `Acknowledged` state — parking a reviewed contradiction.** Many soft contradictions are
-legitimately two compatible framings that should *both* stand permanently; forcing them to "resolve" is
-wrong. When the user has reviewed one and accepts it as tentative-but-fine, set its status to
-`Acknowledged — accepted as tentative (reviewed [ts])`. An acknowledged contradiction stays visible on
-the page but drops out of the "needs attention" aging report, keeping the report signal-rich instead of
-re-nagging decisions already made. So three lifecycle states: **Unresolved** (never reviewed),
-**Acknowledged** (reviewed, deliberately kept tentative), **Resolved** (decided).
-
----
-
-## Causal chain capability
-
-The wiki tracks, assembles, and traverses multi-step cause-effect chains of any length. This is
-useful for any domain where effects cascade: physiology, economics, ecological systems, technology
-failure modes, and more.
-
-### What the wiki tracks for causal reasoning
-
-For every named concept or entity, the wiki tracks:
-
-- **Upstream causes:** what entities cause or contribute to this one, by what mechanism, and in what direction
-- **Downstream effects:** what entities this one causes or contributes to, by what mechanism, and in what direction
-- **Direction of effect on every link:** use a consistent vocabulary — increase / decrease / activate / inhibit / trigger / suppress / enable / block. Never leave direction ambiguous.
-
-This is captured in three places:
-1. `What causes this` and `What this causes` sections on individual concept pages
-2. Dedicated `causal-chain` pages for chains of 3+ links, including branches
-3. Wikilinks between pages that allow traversal in either direction
-
-### Querying causal chains
-
-When a user asks a causal question, answer in one of three modes depending on the question:
-
-**"What causes X?" / "What leads to X?"**
-Read X's page. Report everything in `What causes this`, including direction of each effect. Traverse any `causal-chain` pages that include X as an effect node and report the full upstream path to root causes.
-
-**"What does X cause?" / "What happens when X increases/decreases?"**
-Read X's page. Report everything in `What this causes`, including direction. Traverse downstream through causal-chain pages. Report the full cascade.
-
-**"Given symptom or outcome Y, what are the possible causes?"**
-Find all causal chains and concept pages where Y appears as an effect. Traverse backwards to all root-cause nodes. Present the result as a cause tree:
-
-```
-Y is caused by:
-├── A — [direction + mechanism]
-│   └── A is caused by: P [direction], Q [direction]
-│       └── P is caused by: S [direction]
-└── B — [direction + mechanism]
-    └── B is caused by: R [direction]
-```
-
-Mark any branch that includes EXTERNAL links. If a path is incomplete (a root cause is not found in the wiki), note the gap rather than fabricating an answer.
-
-**Cyclic chains (feedback loops).** When traversing — in any of the three modes — and you reach a
-node already on the current path (a loop-back edge, marked `↺` in the Links table), **stop
-traversing that branch and report the cycle** instead of recursing forever. State the loop
-explicitly: name the node where it closes, the direction, and whether it is **reinforcing**
-(amplifies each pass) or **balancing** (settles toward equilibrium). In a cause tree, render the
-closure as a leaf like `└── ↺ loops back to [[node]] (reinforcing) — see [[chain-name]]`. Every node
-is visited at most once per path; the `↺` marker and the chain's `## Loop` section tell you where
-cycles close.
-
-### Handling gaps in causal chains
-
-Source documents may not cover every link in a chain. When a link is not supported by any raw
-source, the wiki may fill the gap using LLM general knowledge under these rules:
-
-1. **Mark the link as EXTERNAL** in the chain with `· Source: EXTERNAL`.
-2. **Cite a reputable source** in both the `external_knowledge` frontmatter field and the `## External knowledge used` section. A reputable source is a peer-reviewed paper, authoritative textbook, recognized clinical guideline, or well-established reference work. Include author, publication, year, and URL or DOI where available.
-3. **Record the model and timestamp** for every external knowledge entry: the exact model name/version that supplied the knowledge (e.g. `claude-sonnet-4-6`) and the full datetime it was added. Different models have different knowledge cutoffs and reliability, so this provenance must be auditable later.
-4. **Never blend** external knowledge silently with source-document knowledge. The seam must always be visible to the reader.
-5. If the LLM cannot identify a specific reputable source for a bridging claim, mark the link as `EXTERNAL — unverified` and flag it for user review rather than presenting it as established fact. The model name and timestamp must still be recorded.
-
----
-
-## Query workflow
-
-Run this workflow when answering a reader question.
-
-1. **Read `index.md`** to find relevant wiki pages.
-2. **Read the relevant pages** — do not go back to raw sources unless a page is missing entirely.
-3. **If the question is causal:** apply the causal chain query patterns described in the Causal chain capability section.
-4. **Before synthesizing from multiple pages:** check for contradictions between the pages being combined. If a contradiction exists, surface it to the user rather than silently picking one side.
-5. **Synthesize the answer** in plain language, citing the wiki pages used.
-6. **If the answer is a useful synthesis** not already captured in a single wiki page: file it as a new concept or workflow page and add it to `index.md`.
-
-Good answers compound the wiki. Do not let useful synthesis disappear into chat history.
-
----
-
-## Lint workflow
-
-Run this workflow periodically (after every 3–4 ingests, or on request).
-
-### Scope: incremental by default, full sweep on request
-
-Lint splits into **cheap deterministic checks** and **expensive reasoning checks**, which scope
-differently:
-
-- **Deterministic, shell-based checks** (Orphan pages, Missing pages, Stale pending-pointers, Broken
-  asset links, Unreferenced source images) are `grep`/`comm`/`find` passes with no context cost — run
-  them **repo-wide every time**.
-- **Reasoning-heavy checks** (Contradictions, Causal-chain gaps, Thin pages, Missing cross-references)
-  cost LLM context, so by default scope them to the **changed neighbourhood**:
-  1. **Changed set** — pages created/updated since the last lint. Read it from `log.md` (`ingest |`
-     entries after the most recent `lint |` entry) or `git diff` since the last lint commit.
-  2. **Neighbourhood** — the changed set plus its **1st- and 2nd-degree `[[wikilink]]` neighbours**.
-     This is the *only* surface where a newly-introduced contradiction, broken cross-reference, or
-     causal gap can appear: a contradiction can exist only between claims about the **same entity or
-     relationship**, and the wikilink graph already encodes which pages are related — two pages sharing
-     no link and no concept cannot contradict each other. Re-reasoning the whole wiki for a small edit
-     is O(n²) in page count and needlessly burns context as the wiki grows.
-
-**Full reasoning sweep on request** — run the reasoning-heavy checks across the entire wiki when the
-user asks for a "full lint", and as good practice at major milestones (e.g. after a large bootstrap
-ingest) to catch non-local drift an incremental pass could miss. State which scope you ran.
-
-Whenever a scoped pass covers a page carrying an **unresolved or acknowledged** contradiction, re-assess
-that contradiction against the new material and update its `Last reviewed:` line — this is how soft
-contradictions get revisited as related evidence arrives (see *Aging and revisiting soft contradictions*
-under Contradiction detection and resolution).
-
-Check for:
-- **Orphan pages** — `wiki/**` pages with no inbound `[[wikilinks]]` from other pages. Scope this to the synthesized layer only: `raw/NNNN_…/article.md` source packages are **expected** orphans (provenance, not graph nodes — see *The source layer is provenance*) and must **not** be flagged or "fixed" by wikilinking them.
-- **Missing pages** — concepts or entities mentioned in `[[wikilinks]]` that have no file (ignore `[[raw/...]]` source pointers — they reference source files, not wiki pages)
-- **Near-miss slugs** — an orphaned forward link `[[x]]` coexisting with an existing page that may be the same entity under a different name; flag the pair for user review rather than silently merging or renaming, and ensure the link site carries a pending-pointer if the pages are closely related
-- **Stale pending-pointers** — `*(page pending — closest coverage: …)*` notes whose wanted slug now has a page; delete the parenthetical and keep the plain, now-resolving wikilink
-- **Contradictions** — claims on two pages that cannot both be true; apply the full contradiction protocol
-- **Causal chain gaps** — `What causes this` / `What this causes` sections referencing a node with no wiki page; broken links in `causal-chain` pages
-- **Missing direction labels** — causal links with no increase / decrease / activate / inhibit notation
-- **EXTERNAL — unverified links** — causal chain links flagged as unverified; prompt user to review
-- **Stale sources** — pages whose `sources` list a document that has since been updated in `raw/`
-- **Broken asset links** — image links pointing into `raw/` that no longer resolve; borderline illustrative/decorative calls worth a second look
-- **Unreferenced source images** — for each already-ingested `raw/NNNN_…/images/` folder, find images referenced **nowhere** in `wiki/` — neither embedded (`![](../../raw/…/images/foo.png)`) nor cited as a source path (`raw/…/images/foo.png`) for a synthesized claim. Each such image is one of two things: a correctly-skipped **decorative** image (fine), or an **illustrative** image whose information was dropped — typically when an ingest was interrupted before its image sweep finished. The lint pass MUST **open each flagged image** and decide: decorative → leave it; carries information absent from the wiki → synthesize it into the right page per Images-and-assets rule 4 (citing the image path). This is the backstop that catches image-borne knowledge lost to an unfinished ingest. (An image whose info was synthesized to text but not embedded is **not** flagged — the source-path citation counts as a reference.)
-- **Thin pages** — pages with a "What it is" but empty "How it works" or "When to use it"
-- **Missing cross-references** — two pages about related topics with no link between them
-
-For each issue found: fix it, note it in `log.md` as `## [YYYY-MM-DD HH:mm:ss] lint | [description of fix]`.
-
----
-
-## Index format
-
-`index.md` is the LLM's map of the wiki. Update it on every ingest. Format:
-
-```markdown
-# [Project] Wiki — Index
-
-## Concepts
-- [[concept-page]] — one-line description
-...
-
-## Tools
-- [[tool-page]] — one-line description
-...
-
-## Workflows
-- [[workflow-page]] — one-line description
-...
-
-## Setup Guides
-- [[setup-page]] — one-line description
-...
-
-## Causal Chains
-- [[chain-page]] — [trigger] → [end state]
-...
-
-## Metaphors
-- [[metaphor-page]] — one-line description
-...
-```
-
----
-
-## Log format
-
-`log.md` is append-only. Never edit past entries. Add new entries at the bottom.
-
-```markdown
-## [YYYY-MM-DD HH:mm:ss] ingest | [Source Title]
-Pages created: page-a, page-b, page-c
-Pages updated: page-d (added causal links), page-e (revised definition)
-
-## [YYYY-MM-DD HH:mm:ss] contradiction | [Page title]
-Source A (raw/file-a.md): "[exact claim]"
-Source B (raw/file-b.md): "[exact claim]"
-LLM assessment ([model name/version]): [short plausibility analysis]
-Contradiction severity: hard | soft | scope
-Last reviewed: [model name/version], [YYYY-MM-DD HH:mm:ss]
-Status: Unresolved — flagged for user review
-
-## [YYYY-MM-DD HH:mm:ss] lint | Initial lint pass
-Fixed: 2 orphan pages — added cross-links
-Missing page created: page-f (referenced by page-g but absent)
-EXTERNAL — unverified: 1 link flagged in chain-x for user review
-```
-
----
-
-## Source attribution
-
-Every wiki page must list its sources in frontmatter. When writing or updating a page, attribute
-claims to the specific source document they came from. If two sources cover the same topic, list
-both. If a claim comes from LLM general knowledge rather than a source document, it must appear in
-`external_knowledge` frontmatter — never in the `sources` list.
-
-When source documents have named authors or co-authors, record them in a comment at the top of the
-page so attribution is preserved as the wiki is updated.
-
----
-
 ## Hard rules
 
 1. **Never modify files in `raw/`.** Raw sources are immutable. Read them; do not edit them.
@@ -827,7 +210,7 @@ page so attribution is preserved as the wiki is updated.
 6. **One page per concept.** Do not create near-duplicate pages. If two concepts are closely related, one page can cover both with a clear structure.
 7. **Never silently resolve a contradiction.** When two sources conflict, flag it, log it, and surface it to the user. Do not choose a side without human review unless it is an unambiguous scope mismatch with the scope documented on both pages.
 8. **Mark causation direction explicitly on every link.** Use: increase / decrease / activate / inhibit / trigger / suppress / enable / block. A causal link without a stated direction is incomplete and must be flagged during lint.
-9. **Never describe an image you have not opened.** Citing, summarizing, embedding-as-evidence, or even classifying an image requires having read that exact image with the Read tool. Guessing its contents from the surrounding text is fabrication — the same violation as inventing a source quote — and is the cause of false image citations. See Images and assets rule 3.
+9. **Never describe an image you have not opened.** Citing, summarizing, embedding-as-evidence, or even classifying an image requires having read that exact image with the Read tool. Guessing its contents from the surrounding text is fabrication — the same violation as inventing a source quote — and is the cause of false image citations. See Images & assets rule 3 in `schema/ingest.md`.
 
 ## Prompt log (kept centrally, not in this repo)
 This project's prompt log is not stored in this repo. Per the workspace Prompt

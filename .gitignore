@@ -1,5 +1,6 @@
 # Machine-local / session-transient files — never part of the wiki
 .claude/settings.local.json
+.claude/.gate/
 resume_session.txt
 project_prompts.txt
 

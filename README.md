@@ -64,15 +64,80 @@ The whole behavioral contract lives in [`CLAUDE.md`](CLAUDE.md). When you open t
 Code, that file is auto-loaded as the project instructions, so the assistant already knows how to
 behave — you do not paste any prompt to "boot" it.
 
-For efficiency the schema is **split**: `CLAUDE.md` is a **lean core** (always auto-loaded) that
-routes to detailed rule files in **`schema/`**, which are read **on demand** for the task at hand —
-so each session pays for only the rules it needs instead of the whole schema. A small **load-gate**
-hook (`.claude/settings.json` → `tools/schema_gate.py`) enforces that split: it blocks a
-`wiki/`/`index.md`/`log.md` write until the matching `schema/` file has been read in the session, so
-the on-demand rules can never be silently skipped. The gate needs Python to enforce and **fails
-open** — no Python means no enforcement, never a hard block — and it is cross-platform (it tries
-`python3`, then `python`). If a hand-edit is ever blocked, just open the `schema/` file the message
-names and retry.
+---
+
+## Why the schema is split (and how the load-gate works)
+
+Earlier versions of this template kept the entire rulebook in one `CLAUDE.md` that the agent
+auto-loaded **in full at the start of every session**. That is simple, but it carries a cost worth
+understanding, because it shapes how the tool now works.
+
+**The problem — context cost compounds.** An LLM agent has a limited context window, and everything
+it must "know" up front is re-read on every fresh session and silently competes for that window. Two
+things made this grow without bound as a wiki matured:
+
+- **`log.md` and `index.md` keep growing.** They are append-mostly catalogs of everything that has
+  happened and every page that exists. In a mature wiki we measured a `log.md` that had grown **past
+  what fits in a single context window**, and an `index.md` (consulted on essentially every question)
+  that was **larger than the entire schema**. Re-reading those *whole*, every session, is the real
+  token sink.
+- **The schema itself was a flat, always-paid tax.** One big `CLAUDE.md` meant every session — and
+  every cheap, dispatched sub-task — paid for the *complete* rulebook even when it only needed the
+  slice for, say, ingesting one page.
+
+**What the testing showed.** When we actually measured where the tokens went (instead of guessing),
+the dominant, unbounded cost was **re-reading those growing catalog files** — not the model's
+reasoning, and not re-reading source documents (individual sources turned out to be small). The fixed
+schema load was a smaller, *bounded* cost, but a real one — and the piece we could cut most cleanly.
+
+Token counts below are rough estimates (bytes ÷ 4), measured on two real wikis that differ in **both**
+how many sources they hold and how big each source is:
+
+| | Wiki A — short slide decks | Wiki B — long articles |
+|---|---|---|
+| sources / pages | ~80 / ~150 | ~250 / ~400 |
+| a typical single source | ~3.5K tokens (median) | ~8.8K tokens (median; longest ~16K) |
+| `log.md` (append-only history) | ~96K tokens | ~320K tokens — *past a single context window* |
+| `index.md` (page catalog, read per query) | ~10K tokens | ~30K tokens |
+| always-loaded schema — **before** the split | ~16K tokens | ~16K tokens |
+| always-loaded schema — **after** the split | **~4.4K tokens** | **~4.4K tokens** |
+
+The two wikis differ in source *count* **and** source *size* (short slides vs long articles), and the
+catalog files grow with total ingested content and page count — both dimensions, not count alone. Even
+the **largest single source (~16K tokens) is smaller than the old always-loaded schema**, and is
+dwarfed by `index.md`/`log.md` — which is why re-reading sources was never the bottleneck, and why the
+two levers that matter are the schema split (~16K → ~4.4K) and the never-whole-read rule for the
+catalog files.
+
+**The fix — load only what the task needs.** The schema is now **split in two**:
+
+- **`CLAUDE.md` is a lean core** (a few KB) that *always* auto-loads: what the wiki is, where things
+  live, the cross-cutting rules, and a **router** that says which detail file to read for which job.
+- **`schema/` holds the detailed procedure** (page format, ingest, contradictions, causal chains,
+  query, lint, index/log formats), and each file is read **on demand** — only when its workflow runs.
+
+Paired with a standing rule to **never whole-read `log.md`/`index.md`** (the agent tails them, greps
+them, or reads `git` history instead), this keeps each session's fixed context cost roughly flat as
+the wiki grows, instead of climbing with every source you add.
+
+**The load-gate — keeping the guarantee.** Auto-loading the whole schema had one virtue: the rules
+were *guaranteed present* whenever the agent acted. On-demand loading could quietly lose that — an
+agent might edit a page without having read the page-format rules first. So a small **load-gate**
+restores the guarantee as an enforced check. A hook (`.claude/settings.json` → `tools/schema_gate.py`)
+**blocks a write to `wiki/`, `index.md`, or `log.md` until the matching `schema/` file has been read
+in that session**, then tells the agent exactly which file to open. It is deliberately conservative:
+
+- It **fails open** — if it cannot run (for example, no Python on the machine) it simply stops
+  enforcing rather than blocking your work; the periodic lint pass is the backstop.
+- It is **cross-platform** — it tries `python3` first (Linux/macOS), then `python` (typical Windows),
+  so one config works on either OS. Testing confirmed it fires in real sessions — and even inside the
+  dispatched sub-agents the tool uses for cheap work — while staying invisible once the right file has
+  been read.
+
+For you as a user this is almost entirely transparent. The one time you'll notice it is if you
+**hand-edit** a wiki page and the edit is blocked with a "Schema load-gate" message — that just means
+"open the `schema/` file it names, then retry." The agent does exactly that on its own during normal
+work.
 
 ---
 
@@ -277,9 +342,10 @@ don't have to eyeball every page. `tools/contradiction_qa.py` ships with this te
   at lint time, or have the agent run it. No email, git, or scheduler involved — it only detects and
   reports; resolution stays the manual judgment above.
 - **Tier 2 — automate it (optional).** To have the report emailed and aged on a schedule, wire the
-  module's `aging_report()` into a small daily job plus your mailer. The `llm-wiki-health-corpus`
-  repo's `corpus-nag.py` is a working reference for that shell. This is extra infrastructure and
-  entirely optional — the wiki is fully functional on Tier 1.
+  module's `aging_report()` into a small daily job (cron / Task Scheduler) plus your mailer — the
+  module exposes everything that shell needs (`scan_contradictions`, `split_severity`, `aging_report`)
+  and leaves the send/cadence/state-write to your wrapper. This is extra infrastructure and entirely
+  optional — the wiki is fully functional on Tier 1.
 
 ### Causal chains
 

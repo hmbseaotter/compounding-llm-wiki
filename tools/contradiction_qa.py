@@ -4,12 +4,14 @@
 This is the shared, pipeline-independent heart of the wiki's contradiction handling: it reads the
 `Status: Unresolved` markers the schema writes onto `wiki/**` pages, classifies each by severity
 (hard vs soft/scope), and builds the soft/scope aging report. It does NOT email, commit, schedule,
-or touch the network — those orchestration concerns stay in the callers:
+or touch the network — those orchestration concerns stay in whatever caller you wrap it in. Two
+example shells (both optional, both yours to write if you want Tier-2 automation):
 
-  - corpus-ingest.py  imports scan_contradictions / split_severity for its commit-HOLD gate
-                      (HARD contradictions block the auto-commit; soft/scope proceed flagged).
-  - corpus-nag.py     imports scan_contradictions / split_severity / aging_report / _age_days and
-                      keeps ONLY the email-send + state-write shell (cadence, dedupe, finalize).
+  - an auto-ingest commit gate     imports scan_contradictions / split_severity to HOLD an automated
+                                   commit on HARD contradictions (soft/scope proceed flagged).
+  - a scheduled digest / "nag" job imports scan_contradictions / split_severity / aging_report /
+                                   _age_days and adds only the email-send + state-write shell
+                                   (cadence, dedupe, finalize).
 
 Because it is pure stdlib and free of any orchestrator coupling, the same file drops unchanged into
 the compounding-llm-wiki template and any other wiki: there, the Tier-1 CLI alone gives contradiction
@@ -31,7 +33,7 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 # Default wiki root = the parent of this file's tools/ dir. Holds for <wiki>/tools/contradiction_qa.py
-# in every wiki, so callers that share the same tools/ dir (corpus-ingest.py, corpus-nag.py) get the
+# in every wiki, so callers that share the same tools/ dir (e.g. an ingest gate or a scheduled job) get the
 # identical root they computed themselves, and the CLI can override it with --root.
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -153,7 +155,7 @@ def aging_report(cons, escalate_days=90):
     Lists OPEN soft/scope contradictions oldest-`Last reviewed:`-first and marks any past escalate_days
     as overdue. Returns a dict {soft_count, overdue_count, subject, body, rows}; subject/body are None
     when there are no open soft/scope items. Does NOT send, persist, or apply send-cadence — those
-    (the LAST_DIGEST cadence, the email, the state write) stay in corpus-nag.py."""
+    (the send cadence, the email, the state write) stay in the scheduled job that wraps this."""
     soft = [c for c in cons if c["severity"] != "hard"]   # open soft/scope (all Unresolved by scan)
     if not soft:
         return {"soft_count": 0, "overdue_count": 0, "subject": None, "body": None, "rows": []}

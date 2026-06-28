@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\"",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\" 2>/dev/null || python \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\"",
             "timeout": 10,
             "statusMessage": "schema load-gate"
           }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\"",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\" 2>/dev/null || python \"$CLAUDE_PROJECT_DIR/tools/schema_gate.py\"",
             "timeout": 10,
             "statusMessage": "schema load-gate"
           }

@@ -336,7 +336,8 @@ The contradiction *detection* above can be run as a small, **stdlib-only** tool 
 don't have to eyeball every page. `tools/contradiction_qa.py` ships with this template but is
 **dormant** — it does nothing until you run it, and needs no setup:
 
-- **Tier 1 — run it (zero infrastructure).** `python tools/contradiction_qa.py --root .` scans every
+- **Tier 1 — run it (zero infrastructure).** `python tools/contradiction_qa.py --root .` (on
+  macOS/Linux use `python3`) scans every
   `Status: Unresolved` marker across `wiki/**`, lists them by severity (hard vs soft/scope), and
   prints the soft/scope **aging report** (oldest-reviewed first, flagging any past ~90 days). Run it
   at lint time, or have the agent run it. No email, git, or scheduler involved — it only detects and
@@ -537,6 +538,11 @@ to it.
    ```
    git clone https://github.com/<your-username>/<your-repo>.git
    ```
+   > **HTTPS vs SSH?** The **HTTPS** URL above (from the green **Code** button) needs no setup and
+   > works for everyone. If you have already set up **SSH keys** with GitHub, you may instead use the
+   > SSH form `git@github.com:<your-username>/<your-repo>.git`; if that means nothing to you, stick
+   > with HTTPS.
+
    By default this creates a folder named after your repo. To clone into a folder name **of your
    choosing** instead, add that name as a final argument:
    ```

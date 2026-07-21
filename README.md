@@ -186,7 +186,7 @@ compounding-llm-wiki/
 ├── schema/            ← detailed workflow rules, loaded ON DEMAND (page-format · ingest · contradictions · causal · query · lint · formats)
 ├── .claude/
 │   └── settings.json  ← load-gate hook (+ effort level): enforces the on-demand schema read before any wiki/index/log write
-├── tools/             ← stdlib-only helpers: schema_gate.py (the load-gate) · contradiction_qa.py (optional contradiction QA)
+├── tools/             ← stdlib-only helpers: schema_gate.py (the load-gate) · contradiction_qa.py + structure_qa.py (optional QA checkers)
 ├── README.md          ← this file — project overview and setup guide
 ├── LICENSE            ← MIT
 ├── index.md           ← catalog of every wiki page (the LLM keeps this current)
@@ -235,7 +235,7 @@ it to; you should respect them too when editing by hand.
 | **`CLAUDE.md`** | The behavioral schema (lean core). | This _is_ the engine's instruction set. Edit it to change how the tool behaves; otherwise leave it. Claude Code auto-loads it as project instructions. |
 | **`schema/`** | The detailed workflow rules, split out of `CLAUDE.md` and loaded on demand. | LLM-maintained ruleset; the lean `CLAUDE.md` routes to the right file per task. Don't hand-edit unless you are deliberately changing how the tool behaves. |
 | **`.claude/settings.json`** | The load-gate hook + effort level. | Enforces that the matching `schema/` file was read before a `wiki/`/`index.md`/`log.md` write. **If a hand-edit is blocked, this is why** — open the named `schema/` file once, then retry. Needs Python to enforce; **fails open** (no Python → no enforcement, never a block). |
-| **`tools/`** | Stdlib-only helper scripts: `schema_gate.py` (the load-gate) and `contradiction_qa.py` (optional contradiction QA). | Run/maintained by the tool; no setup. |
+| **`tools/`** | Stdlib-only helper scripts: `schema_gate.py` (the load-gate), plus the optional QA checkers `contradiction_qa.py` (claim conflicts) and `structure_qa.py` (schema/repo defects). | Run/maintained by the tool; no setup. |
 
 > **Note on the `CLAUDE.md` name.** Claude Code automatically loads a file named `CLAUDE.md` at the
 > repo root as project instructions — that is why the schema uses that name. If you drop this wiki
@@ -330,23 +330,46 @@ You resolve it; the tool then records your decision and the reason on both pages
 only thing it resolves on its own is an unambiguous _scope mismatch_ (one source general, one
 specific) — and even then it documents the scope on both pages rather than discarding a claim.
 
-### Contradiction QA tooling (optional automation)
+### QA tooling (optional automation)
 
-The contradiction *detection* above can be run as a small, **stdlib-only** tool so you (or the agent)
-don't have to eyeball every page. `tools/contradiction_qa.py` ships with this template but is
-**dormant** — it does nothing until you run it, and needs no setup:
+Two small **stdlib-only** checkers ship in `tools/` so you (or the agent) don't have to eyeball every
+page. Both are **dormant**: they do nothing until run, need no setup, no install, no API key — and
+nothing breaks if you never touch them.
 
-- **Tier 1 — run it (zero infrastructure).** `python tools/contradiction_qa.py --root .` (on
-  macOS/Linux use `python3`) scans every
-  `Status: Unresolved` marker across `wiki/**`, lists them by severity (hard vs soft/scope), and
-  prints the soft/scope **aging report** (oldest-reviewed first, flagging any past ~90 days). Run it
-  at lint time, or have the agent run it. No email, git, or scheduler involved — it only detects and
-  reports; resolution stays the manual judgment above.
-- **Tier 2 — automate it (optional).** To have the report emailed and aged on a schedule, wire the
-  module's `aging_report()` into a small daily job (cron / Task Scheduler) plus your mailer — the
-  module exposes everything that shell needs (`scan_contradictions`, `split_severity`, `aging_report`)
-  and leaves the send/cadence/state-write to your wrapper. This is extra infrastructure and entirely
-  optional — the wiki is fully functional on Tier 1.
+| Tool | Answers | Run it |
+|---|---|---|
+| `contradiction_qa.py` | which claim-level conflicts are open, by severity, and which are going stale | `python tools/contradiction_qa.py` |
+| `structure_qa.py` | where the repo violates its own schema: duplicate slugs, index parity both ways, stale pending-pointers, broken image links, direction tokens outside the sanctioned vocabulary | `python tools/structure_qa.py` |
+
+*(On macOS/Linux use `python3`. Both accept `--root <path>` if you are not in the wiki root.)*
+
+**What is expected of you: nothing routine.** `/wiki-compile` runs both automatically as part of its
+lint step, so a normal ingest-then-compile cycle already checks the wiki. Run them by hand only when
+you want a check between compiles, or to confirm a fix.
+
+- **Tier 1 — run it (zero infrastructure).** Each prints a plain report and exits. No email, git, or
+  scheduler involved — they only detect and report.
+- **Tier 2 — automate it (optional).** To have reports emailed on a schedule, wire the modules into a
+  small daily job (cron / Task Scheduler) plus your mailer: they expose everything such a shell needs
+  (`scan_contradictions` / `split_severity` / `aging_report`, and `scan_structure` /
+  `structure_report`) and leave the send, cadence and state-write to your wrapper. Extra
+  infrastructure, entirely optional — the wiki is fully functional on Tier 1.
+
+**The two kinds of finding need different things from you:**
+
+- A **contradiction** needs a *judgment*: two sources disagree and you decide, by editing the
+  `Status:` line on the page (see the manual resolution above). A HARD one blocks an automated commit
+  until you do; soft/scope ones never block and can be parked as `Acknowledged`.
+- A **structural finding** needs a *fix*, not a judgment — rename the duplicate page, add the missing
+  index line, correct the broken image path. There is **no marker to clear**: every check is
+  recomputed from the repo, so the finding disappears by itself once the defect is gone. Structural
+  findings never block a commit.
+
+> **Keep the checkers identical across wikis.** Both files are meant to be byte-identical in every
+> wiki, with `llm-wiki-toolkit/wiki-tools/` as the upstream; refresh them with the toolkit's
+> `install-wiki-tools.ps1` / `.sh` (`--check` reports drift and exits non-zero). This matters because
+> they were once hand-copied and silently diverged by ~70 lines — some wikis ran an older, weaker
+> check for weeks without anyone noticing. If you are not using the toolkit, just leave them alone.
 
 ### Causal chains
 
@@ -371,6 +394,14 @@ used. If the answer is a useful synthesis not yet captured anywhere, it files it
 Periodically (after every 3–4 ingests, or when you ask), the tool sweeps for orphan pages, missing
 pages, stale pointers, unlabelled causal directions, broken image links, unreferenced source images,
 thin pages, and contradictions — fixing what it can and logging each fix.
+
+The mechanical half of that sweep is the two QA checkers above: `/wiki-compile` runs
+`structure_qa.py` and `contradiction_qa.py` first, then reasons about what they cannot check
+(fabricated citations, an inverted causal direction, a thin page). So the deterministic defects are
+caught the same way every time, and the model's attention goes to the parts that need judgment.
+Anything a checker reports is either fixed in that pass or written into the `log.md` lint entry as
+explicitly OPEN — never mentioned in passing, because a finding recorded only in a log nobody reads
+is a finding nobody acts on.
 
 ### Images
 
@@ -440,7 +471,7 @@ GitHub's Markdown viewer renders **Mermaid diagrams automatically**, so the caus
 The **wiki template itself** needs no Node and no build step — the "program" is the schema plus your
 agent. The one place Python appears is the optional **load-gate** hook (`tools/schema_gate.py`): it
 enforces the on-demand schema split, but **fails open**, so without Python it simply does not enforce
-and everything else still works. (`tools/contradiction_qa.py` is likewise optional and stdlib-only.) The optional tools above matter only for
+and everything else still works. (`tools/contradiction_qa.py` and `tools/structure_qa.py` are likewise optional and stdlib-only.) The optional tools above matter only for
 *automated source acquisition* — fetching a URL, or converting a PDF/Word file into ingestible
 per-page form. Manual source-adding and all query / lint / contradiction work need none of them. See
 [External tools for source acquisition](#external-tools-for-source-acquisition).

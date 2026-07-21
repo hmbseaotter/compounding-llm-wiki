@@ -33,7 +33,7 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 # Default wiki root = the parent of this file's tools/ dir. Holds for <wiki>/tools/contradiction_qa.py
-# in every wiki, so callers that share the same tools/ dir (e.g. an ingest gate or a scheduled job) get the
+# in every wiki, so any caller sharing the same tools/ dir (an ingest orchestrator, a nag job) gets the
 # identical root they computed themselves, and the CLI can override it with --root.
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -59,6 +59,49 @@ UNRESOLVED = "Status: Unresolved"                          # the schema's contra
 
 SOFT_HINTS = ("scope mismatch", "scope difference", "scope gradient", "not a true contradiction")
 HARD_HINTS = ("cannot both be true",)
+
+# Pasted verbatim into every contradiction email — the orchestrator alert, the Done summary, the daily
+# nag, and the aging report below — so the "how" travels with the "what". It lives HERE in the shared
+# base module (not in any one caller) so all callers reach the SAME reference, including aging_report()
+# in this file; corpus-ingest re-exports it (import) and corpus-nag reads cq.HELP_RESOLVE.
+HELP_RESOLVE = """HOW TO RESOLVE A CONTRADICTION
+------------------------------
+Each item above is a `## Contradictions flagged` block on a wiki page (a plain Markdown file).
+A block has two fields you care about:
+  * Contradiction severity:  hard | soft | scope   <- HOW serious (set when detected)
+  * Status:                  <- the resolution state; THIS is the line you edit.
+
+ALLOWED Status values (set the one that fits):
+  Unresolved - flagged for user review
+      Starting state. A HARD here BLOCKS the auto-commit until you change it; soft/scope are
+      already committed but stay flagged for review.
+  Acknowledged - accepted as tentative (reviewed <YYYY-MM-DD HH:MM:SS>)
+      SOFT / SCOPE only. Use when both claims can stand and the conflict is genuinely unsettled
+      or context-dependent: keeps BOTH, no side picked, and stops the reminders. (e.g. two real
+      studies disagree by population/dose.)
+  Resolved - kept <A or B> because <your reason>
+      You decided one claim wins (note why: more recent / more authoritative / more specific).
+  Resolved - both true: <the conditions under which each claim holds>
+      You reconciled both: each is correct under stated conditions (population, dose, timeframe).
+      Document the conditions; discard neither claim.
+
+WHICH APPLIES:
+  HARD         -> end at `Resolved`. (If on reflection the two CAN both be true, it was not
+                  really hard: change `Contradiction severity:` to soft or scope, then
+                  Acknowledge or Resolve it.)
+  SOFT / SCOPE -> `Acknowledged` (park as tentative) OR `Resolved` (settle it) - your call.
+                  If a soft one turns out to be genuinely mutually exclusive, ESCALATE instead:
+                  set `Contradiction severity:` to `hard` (raises it to the blocking gate).
+
+STEPS:
+  1. Open the wiki in OBSIDIAN (open the repo folder as the vault) - or edit the .md in any text
+     editor (VS Code, Notepad++, Notepad); the pages are plain Markdown either way.
+  2. Go to the page + line listed above; find its `## Contradictions flagged` section.
+  3. Set the `Status:` line to one of the allowed values above. (Optionally bump `Last reviewed:`.)
+  4. Save the file.
+
+HARD: the daily nag commits the held knowledge automatically once every HARD one is Resolved.
+SOFT / scope: nothing is blocked - address them at your leisure."""
 
 
 def _verdict(text):
@@ -88,6 +131,21 @@ def _grab_ts(rx, text):
     """First 'YYYY-MM-DD HH:MM:SS' captured by rx in text, as a string, or None."""
     m = re.search(rx, text)
     return m.group(1) if m else None
+
+
+def _label(header_line, rel):
+    """A short 'problem area' for a contradiction, taken from its bolded bullet header: the topic
+    after the last em-dash (dropping the 'raw/.. vs raw/..' provenance prefix), or the page name as
+    a fallback. Used to annotate file:line references in the gate output and the alert email so a
+    reader can tell WHICH contradiction a line points at without opening the file."""
+    m = re.search(r"\*\*(.+?)\*\*", header_line)
+    txt = (m.group(1) if m else "").strip()
+    if "—" in txt:
+        txt = txt.rsplit("—", 1)[1].strip()
+    txt = txt.rstrip(":").strip()
+    if not txt or txt.lower().startswith("raw/") or " vs " in txt.lower():
+        txt = os.path.basename(rel)[:-3]
+    return txt[:70]
 
 
 def scan_contradictions(repo=None):
@@ -120,6 +178,7 @@ def scan_contradictions(repo=None):
                     j -= 1
                 ctx = "\n".join(lines[j:i + 1]).lower().replace("*", "")
                 sev = _verdict(line) or _verdict(ctx)
+                defaulted = False
                 if sev is None:
                     if any(h in ctx for h in HARD_HINTS):
                         sev = "hard"
@@ -127,8 +186,10 @@ def scan_contradictions(repo=None):
                         sev = "soft"
                     else:
                         sev = "hard"                      # unclassified -> conservative: block
+                        defaulted = True                  # ...but flag it: no explicit token to trust
                 rel = os.path.relpath(p, repo).replace("\\", "/")
                 out.append({"file": rel, "line": i + 1, "severity": sev,
+                            "label": _label(lines[j], rel), "defaulted": defaulted,
                             "last_reviewed": _grab_ts(r"last reviewed:[^,\n]*,\s*(" + _TS + ")", ctx),
                             "assessed": _grab_ts(r"assessment\s*\([^,\n]*,\s*(" + _TS + ")", ctx)})
     return out
@@ -152,32 +213,42 @@ def _age_days(basis):
 
 def aging_report(cons, escalate_days=90):
     """PURE builder for the soft/scope aging report (schema: 'Aging and revisiting soft contradictions').
-    Lists OPEN soft/scope contradictions oldest-`Last reviewed:`-first and marks any past escalate_days
+    Lists OPEN soft/scope contradictions alphabetically by (page, line), with an 'oldest open' shortlist
+    on top, and marks any past escalate_days
     as overdue. Returns a dict {soft_count, overdue_count, subject, body, rows}; subject/body are None
     when there are no open soft/scope items. Does NOT send, persist, or apply send-cadence — those
-    (the send cadence, the email, the state write) stay in the scheduled job that wraps this."""
+    (the send cadence, the email, the state write) stay in the calling nag job."""
     soft = [c for c in cons if c["severity"] != "hard"]   # open soft/scope (all Unresolved by scan)
     if not soft:
         return {"soft_count": 0, "overdue_count": 0, "subject": None, "body": None, "rows": []}
     rows = [(_age_days(c.get("last_reviewed") or c.get("assessed")),
              c.get("last_reviewed") or c.get("assessed"), c) for c in soft]
-    overdue = [r for r in rows if r[0] is not None and r[0] >= escalate_days]
-    rows.sort(key=lambda r: (r[0] is not None, -(r[0] or 0)))   # unknown-age first, then oldest
+    rows.sort(key=lambda r: (r[2]["file"], r[2]["line"]))   # alphabetical by (page, line) — consistent across all emails
+    overdue = sorted([r for r in rows if r[0] is not None and r[0] >= escalate_days],
+                     key=lambda r: -r[0])                       # most-overdue first for the decision list
+    N_OLD = 8
 
-    def fmt(r):
+    def fmt(r, with_ts=True):
         age, basis, c = r
-        age_s = f"{age}d" if age is not None else "age unknown"
-        return f"  - [{c['severity']}] {c['file']}:{c['line']} — last reviewed {basis or '?'} ({age_s})"
+        age_s = f"Age: {age}d" if age is not None else "Age: unknown"
+        ts = f" (last reviewed {basis})" if (with_ts and basis) else ""
+        return f"  - [{c['severity']}] {c['file']}:{c['line']} — {c.get('label', '')} — {age_s}{ts}"
 
-    body = (f"Soft/scope contradiction aging report — {len(soft)} open (oldest first).\n"
-            "These are tentative and non-blocking, but should be revisited so they do not rot.\n\n"
-            + "\n".join(fmt(r) for r in rows))
+    parts = [f"Soft/scope contradiction aging report — {len(soft)} open.",
+             "These are tentative and non-blocking, but should be revisited so they do not rot."]
+    if len(rows) > N_OLD:                                       # surface the oldest so they can be cleared first
+        oldest = sorted(rows, key=lambda r: (r[0] is None, -(r[0] or 0)))[:N_OLD]
+        parts.append("\nOLDEST OPEN — tackle these first (clears them before they nag again):\n"
+                     + "\n".join(fmt(r, with_ts=False) for r in oldest))
+    parts.append(f"\nAll {len(soft)} open (alphabetical by page):\n"
+                 + "\n".join(fmt(r) for r in rows))
+    body = "\n".join(parts)
     if overdue:
         body += (f"\n\nOVERDUE: {len(overdue)} past the {escalate_days}-day threshold — please "
                  "make a decision (resolve it, or park it as Acknowledged):\n"
-                 + "\n".join(fmt(r) for r in overdue))
-    body += ("\n\nOn each wiki page: resolve it, or park it with "
-             "`Status: Acknowledged — accepted as tentative (reviewed <ts>)` so it stops appearing here.")
+                 + "\n".join(fmt(r, with_ts=False) for r in overdue))
+    body += ("\n\nResolve or Acknowledge each item below to clear it from this report — full how-to:\n\n"
+             + HELP_RESOLVE)
     subj = (f"[corpus-watch] soft-contradiction aging report — {len(soft)} open"
             + (f", {len(overdue)} OVERDUE" if overdue else ""))
     return {"soft_count": len(soft), "overdue_count": len(overdue),
@@ -197,7 +268,8 @@ def main():
     if hard:
         print("\nHARD (would block an auto-commit):")
         for c in hard:
-            print(f"  - {c['file']}:{c['line']}")
+            tag = "   [no severity token — DEFAULTED to hard; add an explicit `Contradiction severity:` line]" if c.get("defaulted") else ""
+            print(f"  - {c['file']}:{c['line']} — {c.get('label', '')}{tag}")
     rep = aging_report(cons, a.aging_escalate_days)
     if rep["soft_count"]:
         print("\n" + rep["body"])
